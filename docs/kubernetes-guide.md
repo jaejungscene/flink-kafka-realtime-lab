@@ -1,54 +1,55 @@
-# Kubernetes Guide
+# Kubernetes 가이드
 
-This lab provides Kubernetes manifests for teams that want to move beyond Docker Compose.
+이 문서는 Docker Compose를 넘어 Kubernetes에서 프로젝트를 배포하고 싶은 사용자를 위한 안내입니다. 이 저장소의 Kubernetes 구성은 Strimzi Kafka Operator와 Flink Kubernetes Operator를 전제로 합니다.
 
-## Prerequisites
+## 사전 조건
 
-- A Kubernetes cluster
-- Strimzi Kafka Operator installed with KRaft and KafkaNodePool support
-- Flink Kubernetes Operator installed
-- Container images pushed to a registry reachable by the cluster:
+- Kubernetes cluster
+- KRaft와 KafkaNodePool을 지원하는 Strimzi Kafka Operator
+- Flink Kubernetes Operator
+- cluster에서 접근 가능한 container registry
+- registry에 push된 container image
   - `realtime-lab-flink-job:2.1.2`
   - `realtime-lab-api:latest`
   - `realtime-lab-generator:latest`
 
-## Render Manifests
+## 매니페스트 렌더링
 
 ```bash
 kubectl kustomize k8s/overlays/dev
 kubectl kustomize k8s/overlays/prod-like
 ```
 
-## Apply Order
+## 적용 순서
 
 ```bash
 kubectl apply -k k8s/overlays/dev
 kubectl -n realtime-lab get kafka,kafkatopic,flinkdeployment,pod
 ```
 
-The Strimzi and Flink custom resources require their operators and CRDs to exist before applying the manifests.
+`Kafka`, `KafkaTopic`, `KafkaNodePool`, `FlinkDeployment`는 custom resource입니다. 따라서 Strimzi와 Flink Operator CRD가 먼저 설치되어 있어야 합니다.
 
-## Dev Overlay
+## 개발용 Overlay
 
-The dev overlay uses:
+`dev` overlay는 가볍게 학습하고 실험하기 위한 구성입니다.
 
-- 1 Kafka broker
-- 1 dual-role KafkaNodePool node
+- Kafka broker 1개
+- dual-role KafkaNodePool node 1개
 - ephemeral Kafka storage
-- 1 Flink TaskManager
+- Flink TaskManager 1개
 - stateless Flink upgrade mode
-- short generator run
+- 짧은 generator 실행
 
-## Prod-Like Overlay
+## 운영 유사 Overlay
 
-The prod-like overlay demonstrates:
+`prod-like` overlay는 실제 운영에서 고려할 선택지를 보여주기 위한 참고 구성입니다.
 
-- 3 Kafka brokers
-- 3 dual-role KafkaNodePool nodes
+- Kafka broker 3개
+- dual-role KafkaNodePool node 3개
 - persistent Kafka storage
 - topic replication factor 3
-- 2 Flink TaskManagers
+- Flink TaskManager 2개
 - savepoint upgrade mode
-- explicit checkpoint path placeholder
+- checkpoint path placeholder
 
-Before real production use, replace placeholder image names, configure TLS/auth, choose durable checkpoint storage, and wire metrics into the company monitoring stack.
+실제 production에 적용하기 전에는 placeholder image 이름을 registry 경로로 바꾸고, TLS/auth, durable checkpoint storage, metrics, alerting, network policy를 회사 환경에 맞게 추가해야 합니다.

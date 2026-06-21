@@ -1,4 +1,4 @@
-# How To Run
+# 실행 방법
 
 이 문서는 프로젝트를 실제로 실행하는 방법을 Docker Compose와 Kubernetes 기준으로 나누어 설명합니다.
 
@@ -6,27 +6,27 @@
 
 Docker Compose는 가장 빠르게 프로젝트를 체험하는 방법입니다.
 
-### Clone
+### 저장소 받기
 
 ```bash
 git clone https://github.com/jaejungscene/flink-kafka-realtime-lab.git
 cd flink-kafka-realtime-lab
 ```
 
-### Prerequisites
+### 사전 조건
 
 - Docker Desktop 또는 OrbStack 실행 중
 - `make`
 - 사용 포트가 비어 있어야 합니다.
 
-| Port | Service |
+| 포트 | 서비스 |
 | ---: | --- |
 | `8000` | FastAPI |
 | `8080` | Kafka UI |
 | `8081` | Flink UI |
 | `29092` | Kafka host listener |
 
-### Step 1: Build
+### 1단계: 빌드
 
 ```bash
 make build
@@ -37,7 +37,7 @@ make build
 - Flink job jar가 Docker image 안에서 Maven으로 빌드됩니다.
 - API, generator, replayer image가 빌드됩니다.
 
-### Step 2: Start Core Services
+### 2단계: 핵심 서비스 시작
 
 ```bash
 make up
@@ -62,7 +62,7 @@ make topics
 
 Flink job 상태가 `RUNNING`이면 정상입니다.
 
-### Step 3: Produce Events
+### 3단계: 이벤트 생성
 
 ```bash
 make produce
@@ -76,7 +76,7 @@ make produce
 docker compose run --rm -e RUN_SECONDS=20 -e EVENTS_PER_SECOND=30 generator
 ```
 
-### Step 4: Check Results
+### 4단계: 결과 확인
 
 ```bash
 make smoke
@@ -99,7 +99,7 @@ curl "http://localhost:8000/topics/transactions.aggregates/messages?limit=5"
 curl "http://localhost:8000/topics/transactions.dlq/messages?limit=5"
 ```
 
-### Step 5: Replay DLQ
+### 5단계: DLQ Replay
 
 ```bash
 make replay-dlq
@@ -108,7 +108,7 @@ make consume-replay
 
 `replayer`는 `transactions.dlq`에서 보정 가능한 record를 읽어 `transactions.replay`로 보냅니다. Flink job은 raw topic과 replay topic을 모두 소비합니다.
 
-### Step 6: Stop
+### 6단계: 종료
 
 ```bash
 make down
@@ -132,7 +132,7 @@ make down
 
 Kubernetes manifests는 Strimzi Kafka Operator와 Flink Kubernetes Operator를 사용하는 실무형 참고 구성입니다.
 
-### Prerequisites
+### 사전 조건
 
 - Kubernetes cluster
 - `kubectl`
@@ -154,7 +154,7 @@ docker build -t realtime-lab-generator:latest ./generator
 
 원격 cluster라면 registry 경로를 붙여 push하고, `k8s/base/*.yaml` 또는 overlay에서 image 값을 registry 경로로 바꾸어야 합니다.
 
-### Step 1: Render Manifests
+### 1단계: Manifest 렌더링
 
 먼저 manifest가 정상적으로 렌더링되는지 확인합니다.
 
@@ -170,16 +170,16 @@ kubectl kustomize k8s/overlays/dev > /tmp/realtime-lab-dev.yaml
 kubectl kustomize k8s/overlays/prod-like > /tmp/realtime-lab-prod-like.yaml
 ```
 
-### Step 2: Choose Overlay
+### 2단계: Overlay 선택
 
-| Overlay | Use Case | 특징 |
+| Overlay | 사용 목적 | 특징 |
 | --- | --- | --- |
-| `k8s/overlays/dev` | 개발/학습 cluster | single Kafka node, ephemeral storage, stateless Flink upgrade |
-| `k8s/overlays/prod-like` | 운영 유사 참고 | 3 Kafka nodes, replicated topics, persistent Kafka storage, savepoint upgrade |
+| `k8s/overlays/dev` | 개발/학습 cluster | Kafka node 1개, ephemeral storage, stateless Flink upgrade |
+| `k8s/overlays/prod-like` | 운영 유사 참고 | Kafka node 3개, replicated topic, persistent Kafka storage, savepoint upgrade |
 
 처음에는 `dev` overlay를 권장합니다.
 
-### Step 3: Apply Dev Overlay
+### 3단계: Dev Overlay 적용
 
 ```bash
 kubectl apply -k k8s/overlays/dev
@@ -193,7 +193,7 @@ kubectl -n realtime-lab get flinkdeployment
 kubectl -n realtime-lab get pods
 ```
 
-### Step 4: Run Generator In Kubernetes
+### 4단계: Kubernetes에서 Generator 실행
 
 `k8s/base/generator-job.yaml`은 generator를 Kubernetes Job으로 실행합니다. 이미 overlay에 포함되어 있으므로 apply 시 함께 생성됩니다.
 
@@ -204,7 +204,7 @@ kubectl -n realtime-lab delete job realtime-lab-generator --ignore-not-found
 kubectl apply -k k8s/overlays/dev
 ```
 
-### Step 5: Access API
+### 5단계: API 접근
 
 로컬에서 API를 확인하려면 port-forward를 사용합니다.
 
@@ -214,7 +214,7 @@ curl http://localhost:8000/health
 curl "http://localhost:8000/topics/alerts.fraud/messages?limit=5"
 ```
 
-### Step 6: Clean Up
+### 6단계: 정리
 
 ```bash
 kubectl delete -k k8s/overlays/dev
@@ -233,9 +233,9 @@ kubectl delete -k k8s/overlays/prod-like
 - prod-like overlay도 실제 production 완성본은 아닙니다. TLS, auth, network policy, durable checkpoint storage, metrics, alerting을 추가해야 합니다.
 - Flink checkpoint path는 production storage로 바꾸어야 합니다.
 
-## 5. Troubleshooting
+## 5. 문제 해결
 
-| Symptom | Check |
+| 증상 | 확인할 것 |
 | --- | --- |
 | Flink job이 안 뜸 | `docker compose logs flink-submit flink-jobmanager` 또는 `kubectl describe flinkdeployment` |
 | topic이 없음 | `make topics`, `docker compose logs topic-init`, Strimzi `KafkaTopic` 상태 |

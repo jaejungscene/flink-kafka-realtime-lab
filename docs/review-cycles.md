@@ -1,106 +1,109 @@
-# Review Cycles
+# 5회 검토 Cycle 기록
 
-The project was completed through five "finish, review, improve, test" cycles.
+이 프로젝트는 다섯 번의 "완성, 검토, 수정 보완, 테스트" cycle을 거쳐 구성했습니다.
 
-## Cycle 1: Version Baseline
+## 1차 Cycle: 버전 기준 정리
 
-Finished:
+완성:
 
-- Moved the lab to Kafka `4.1.2` and Flink `2.1.2`.
-- Pinned the Flink Kafka connector to `4.0.1-2.0`.
+- Kafka `4.1.2`와 Flink `2.1.2` 기준으로 프로젝트를 전환했습니다.
+- Flink Kafka connector를 `4.0.1-2.0`으로 고정했습니다.
 
-Reviewed:
+검토:
 
-- Docker image availability.
-- Maven artifact availability.
-- Compose config consistency.
+- Docker image 존재 여부
+- Maven artifact 존재 여부
+- Docker Compose 설정 정합성
 
-Improved:
+수정 보완:
 
-- Added version rationale in `docs/version-decision.md`.
+- `docs/version-decision.md`에 버전 선택 근거를 추가했습니다.
 
-Tested:
+테스트:
 
 - `docker compose config`
-- Docker manifest checks
-- Maven metadata checks
+- Docker manifest check
+- Maven metadata check
 
-## Cycle 2: Streaming Core
+## 2차 Cycle: 스트리밍 핵심 시나리오
 
-Finished:
+완성:
 
-- Added replay topic consumption.
-- Added merchant anomaly alerting.
-- Added late event handling into DLQ.
+- Replay topic 소비를 추가했습니다.
+- Merchant anomaly alert를 추가했습니다.
+- Late event를 DLQ로 분리하는 처리를 추가했습니다.
 
-Reviewed:
+검토:
 
-- Whether each scenario maps to a common production streaming concern.
+- 각 시나리오가 실제 production streaming concern과 연결되는지 확인했습니다.
 
-Improved:
+수정 보완:
 
-- Added `transactions.replay` and DLQ metadata fields.
-- Added focused rule tests.
+- `transactions.replay` topic과 DLQ metadata field를 추가했습니다.
+- Rule test를 보강했습니다.
 
-Tested:
+테스트:
 
-- Rule unit tests for high-risk, burst, merchant anomaly, and replay eligibility.
+- High-risk, burst, merchant anomaly, replay eligibility rule test
 
-## Cycle 3: Docker Operations
+## 3차 Cycle: Docker 운영성
 
-Finished:
+완성:
 
-- Added Makefile commands for lag, DLQ, replay, and smoke checks.
-- Added replayer service.
+- Lag, DLQ, replay, smoke check용 Makefile command를 추가했습니다.
+- Replayer service를 추가했습니다.
 
-Reviewed:
+검토:
 
-- Whether a new learner can run the system in about 10 minutes.
+- 처음 보는 학습자가 약 10분 안에 실행할 수 있는지 확인했습니다.
 
-Improved:
+수정 보완:
 
-- Expanded smoke checks to alerts, aggregates, and DLQ.
+- Smoke check가 alerts, aggregates, DLQ를 모두 확인하도록 확장했습니다.
 
-Tested:
+테스트:
 
-- Compose rendering and Python compile checks.
+- Docker Compose render
+- Python compile check
 
-## Cycle 4: Kubernetes
+## 4차 Cycle: Kubernetes
 
-Finished:
+완성:
 
-- Added Strimzi Kafka and Flink Kubernetes Operator manifests.
-- Added dev and prod-like overlays.
+- Strimzi Kafka와 Flink Kubernetes Operator manifests를 추가했습니다.
+- `dev`, `prod-like` overlay를 추가했습니다.
 
-Reviewed:
+검토:
 
-- Whether the manifests are useful to engineers familiar with GitOps/operator workflows.
+- GitOps/operator workflow에 익숙한 실무자가 참고할 수 있는 구조인지 확인했습니다.
 
-Improved:
+수정 보완:
 
-- Separated local dev settings from prod-like replication/resource settings.
+- Local dev 설정과 prod-like replication/resource 설정을 분리했습니다.
 
-Tested:
+테스트:
 
 - `kubectl kustomize k8s/overlays/dev`
 - `kubectl kustomize k8s/overlays/prod-like`
 
-## Cycle 5: Learning And Handoff
+## 5차 Cycle: 학습과 인수인계 문서
 
-Finished:
+완성:
 
-- Reworked README, learning guide, schema docs, runbook, replay guide, Kubernetes guide, and CI.
+- README, learning guide, schema docs, runbook, replay guide, Kubernetes guide, CI를 정리했습니다.
 
-Reviewed:
+검토:
 
-- Learning usefulness.
-- Enterprise reference value.
-- Interview and collaboration explainability.
+- 학습자에게 유익한지
+- 기업 실무 참고 가치가 있는지
+- 면접과 협업 상황에서 설명 가능한지
 
-Improved:
+수정 보완:
 
-- Documented what is runnable locally and what must change for production.
+- Local에서 바로 실행 가능한 부분과 production에서 반드시 바꿔야 하는 부분을 문서화했습니다.
 
-Tested:
+테스트:
 
-- Static checks, render checks, and CI workflow coverage.
+- Static check
+- Manifest render check
+- CI workflow coverage

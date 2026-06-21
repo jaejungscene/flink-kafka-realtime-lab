@@ -1,4 +1,4 @@
-# Test Scenarios
+# 테스트 시나리오
 
 이 문서는 이 프로젝트로 실험할 수 있는 스트리밍 처리 시나리오를 설명합니다. 각 시나리오는 학습자가 직접 topic을 관찰하면서 Flink/Kafka의 핵심 개념을 이해하도록 설계되어 있습니다.
 
@@ -20,7 +20,7 @@ make lag
 make smoke
 ```
 
-## Scenario 1: 단건 고위험 결제 알람
+## 시나리오 1: 단건 고위험 결제 알람
 
 목적:
 
@@ -55,7 +55,7 @@ curl "http://localhost:8000/topics/alerts.fraud/messages?limit=10"
 - 단건 알람은 window가 닫히기 전에도 빠르게 나올 수 있습니다.
 - 모든 알람이 window 기반일 필요는 없습니다.
 
-## Scenario 2: 사용자별 1분 burst 알람
+## 시나리오 2: 사용자별 1분 burst 알람
 
 목적:
 
@@ -82,7 +82,7 @@ curl "http://localhost:8000/topics/alerts.fraud/messages?limit=20"
 - window 알람은 event-time watermark가 window 종료 시점을 지나야 출력됩니다.
 - generator는 `user-burst` 패턴을 일부러 만들어 burst 알람이 발생하도록 합니다.
 
-## Scenario 3: 가맹점 이상 징후 알람
+## 시나리오 3: 가맹점 이상 징후 알람
 
 목적:
 
@@ -110,7 +110,7 @@ curl "http://localhost:8000/topics/alerts.fraud/messages?limit=30"
 - 같은 이벤트 stream에서도 key를 다르게 잡으면 다른 종류의 실시간 판단을 만들 수 있습니다.
 - user key와 merchant key는 서로 다른 운영 질문에 답합니다.
 
-## Scenario 4: 국가/카테고리/가맹점 1분 집계
+## 시나리오 4: 국가/카테고리/가맹점 1분 집계
 
 목적:
 
@@ -144,7 +144,7 @@ curl "http://localhost:8000/topics/transactions.aggregates/messages?limit=10"
 - aggregate stream은 dashboard, Redis, ClickHouse, Pinot, Druid, Elasticsearch 같은 serving/analytics storage로 이어질 수 있습니다.
 - 집계는 즉시 나오지 않고 window와 watermark의 영향을 받습니다.
 
-## Scenario 5: 파싱/검증 실패 DLQ
+## 시나리오 5: 파싱/검증 실패 DLQ
 
 목적:
 
@@ -178,7 +178,7 @@ curl "http://localhost:8000/topics/transactions.dlq/messages?limit=10"
 - Kafka source에서 바로 POJO 역직렬화를 하지 않고 string으로 받은 뒤 Flink 내부에서 parse하면 DLQ 처리가 쉬워집니다.
 - DLQ는 단순 쓰레기통이 아니라 replay와 remediation의 출발점입니다.
 
-## Scenario 6: Late Event 처리
+## 시나리오 6: Late Event 처리
 
 목적:
 
@@ -206,7 +206,7 @@ curl "http://localhost:8000/topics/transactions.dlq/messages?limit=20"
 - late event를 무조건 버릴지, 별도 topic으로 보낼지, 보정 후 replay할지는 도메인 결정입니다.
 - 정확성과 지연 시간은 tradeoff입니다.
 
-## Scenario 7: DLQ Replay
+## 시나리오 7: DLQ Replay
 
 목적:
 
@@ -235,7 +235,7 @@ curl "http://localhost:8000/topics/transactions.replay/messages?limit=10"
 - replay를 raw topic에 직접 넣지 않고 별도 topic에 넣으면 lineage와 운영 추적이 쉬워집니다.
 - 실제 production에서는 replay 권한, audit log, ticket id, source DLQ offset을 함께 관리해야 합니다.
 
-## Scenario 8: Consumer Lag와 Checkpoint 확인
+## 시나리오 8: Consumer Lag와 Checkpoint 확인
 
 목적:
 
@@ -258,7 +258,7 @@ curl http://localhost:8081/jobs
 - lag가 계속 증가하면 partition 수, Flink parallelism, backpressure, sink 지연을 함께 봐야 합니다.
 - checkpoint 실패는 장애 복구와 exactly/at-least-once 처리 보장에 직접 연결됩니다.
 
-## Scenario 9: Kubernetes Manifest 검증
+## 시나리오 9: Kubernetes Manifest 검증
 
 목적:
 

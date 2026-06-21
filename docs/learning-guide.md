@@ -1,19 +1,19 @@
-# Learning Guide
+# 학습 가이드
 
 ## 1. Kafka KRaft
 
-Kafka 4.x is KRaft-only. This lab uses a single local broker/controller in Docker Compose and a Strimzi cluster in Kubernetes so learners can compare local development with operator-managed deployment.
+Kafka 4.x는 KRaft-only 방향입니다. 이 프로젝트는 Docker Compose에서는 단일 broker/controller를 사용하고, Kubernetes에서는 Strimzi 기반 cluster 구성을 제공해서 local 개발 환경과 operator 기반 배포 환경을 비교할 수 있게 합니다.
 
-Key ideas:
+핵심 아이디어:
 
-- Topic creation is explicit.
-- Partition count is part of system design.
-- Consumer lag is an operational signal, not just a Kafka detail.
-- Replay is separated from raw ingestion for lineage.
+- Topic은 명시적으로 생성합니다.
+- Partition 수는 시스템 설계의 일부입니다.
+- Consumer lag는 단순 Kafka 지표가 아니라 운영 신호입니다.
+- Replay는 raw ingestion과 분리해 lineage를 보존합니다.
 
 ## 2. Flink Event Time
 
-Flink processes `eventTime`, not the time a container happened to receive the record.
+Flink는 container가 record를 받은 시간이 아니라 event 자체의 `eventTime`을 기준으로 처리합니다.
 
 ```java
 WatermarkStrategy
@@ -21,44 +21,44 @@ WatermarkStrategy
     .withTimestampAssigner((event, timestamp) -> event.getEventTime())
 ```
 
-The job also uses `allowedLateness(Time.seconds(30))` and sends events that arrive after the allowed lateness to DLQ-like handling.
+이 job은 `allowedLateness(Duration.ofSeconds(30))`도 사용합니다. 허용 지연 시간을 넘어 도착한 event는 DLQ성 처리로 분리됩니다.
 
-## 3. Alerting Patterns
+## 3. 알람 패턴
 
-The project includes three common alert patterns:
+이 프로젝트에는 실무에서 자주 쓰는 세 가지 알람 패턴이 들어 있습니다.
 
-- Single-event risk: one transaction is dangerous enough by itself.
-- Keyed user burst: a user creates too many or too expensive payments in one minute.
-- Merchant anomaly: a merchant shows abnormal volume, amount, or average fraud score.
+- 단건 위험 알람: 이벤트 하나만으로도 위험한 거래를 탐지합니다.
+- 사용자 burst 알람: 한 사용자가 1분 동안 너무 자주 또는 너무 큰 금액을 결제하는지 봅니다.
+- 가맹점 이상 징후: 가맹점의 거래량, 거래 총액, 평균 fraud score가 비정상적으로 높은지 봅니다.
 
-Rules live in `RiskRules` so they can be tested and changed without reading the full Flink topology.
+Rule은 `RiskRules`에 분리되어 있습니다. 그래서 전체 Flink topology를 읽지 않아도 threshold를 바꾸거나 테스트를 추가할 수 있습니다.
 
-## 4. Aggregation Pattern
+## 4. 집계 패턴
 
-`transactions.aggregates` emits one-minute `country|category|merchant` aggregates:
+`transactions.aggregates`는 1분 단위 `country|category|merchant` 집계를 발행합니다.
 
 - event count
 - total amount
 - average amount
 - average fraud score
 
-In production, this stream could feed Redis, ClickHouse, Pinot, Druid, Elasticsearch, BigQuery, or a real-time dashboard.
+실무에서는 이 stream이 Redis, ClickHouse, Pinot, Druid, Elasticsearch, BigQuery 또는 real-time dashboard로 이어질 수 있습니다.
 
-## 5. DLQ And Replay
+## 5. DLQ와 Replay
 
-The job reads Kafka values as strings first, then parses JSON inside Flink. This makes bad-event handling visible:
+이 job은 Kafka value를 먼저 string으로 읽고, Flink 내부에서 JSON parse를 수행합니다. 이렇게 하면 bad event 처리가 명시적으로 드러납니다.
 
 - malformed JSON
-- missing required fields
+- required field 누락
 - negative amount
 - too-late event
 
-Recoverable DLQ records can be normalized by the replayer and published to `transactions.replay`.
+복구 가능한 DLQ record는 replayer가 보정한 뒤 `transactions.replay`로 다시 발행할 수 있습니다.
 
-## 6. Exercises
+## 6. 추천 실습
 
-1. Change fraud thresholds in `RiskRules` and run `make test`.
-2. Increase `EVENTS_PER_SECOND` and observe `make lag`.
-3. Change watermark delay and compare aggregate latency.
-4. Run `make replay-dlq` and inspect `transactions.replay`.
-5. Render both Kubernetes overlays and compare dev vs prod-like operational choices.
+1. `RiskRules`의 fraud threshold를 바꾸고 `make test`를 실행합니다.
+2. `EVENTS_PER_SECOND`를 높이고 `make lag`로 consumer lag를 관찰합니다.
+3. Watermark delay를 바꾸고 aggregate latency를 비교합니다.
+4. `make replay-dlq`를 실행하고 `transactions.replay`를 확인합니다.
+5. Kubernetes overlay를 render해서 dev와 prod-like 운영 선택지를 비교합니다.

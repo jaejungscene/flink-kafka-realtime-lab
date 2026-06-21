@@ -1,10 +1,10 @@
-# Event Schemas
+# 이벤트 스키마
 
 현재 프로젝트는 JSON을 사용합니다. 실무에서는 Avro 또는 Protobuf와 Schema Registry를 붙이는 구성을 권장합니다.
 
-## Topics
+## 토픽 목록
 
-| Topic | Purpose |
+| Topic | 목적 |
 | --- | --- |
 | `transactions.raw` | 원천 결제/ML 이벤트 |
 | `transactions.replay` | DLQ 보정 후 재처리 이벤트 |
@@ -12,7 +12,7 @@
 | `alerts.fraud` | Flink 알람 판단 결과 |
 | `transactions.dlq` | 파싱/검증/late event 격리 |
 
-## `transactions.raw` and `transactions.replay`
+## `transactions.raw`와 `transactions.replay`
 
 ```json
 {
@@ -32,7 +32,7 @@
 }
 ```
 
-Required:
+필수 field:
 
 - `eventId`
 - `userId`
@@ -41,7 +41,7 @@ Required:
 
 ## `alerts.fraud`
 
-`alertType` examples:
+`alertType` 예시:
 
 - `HIGH_RISK_TRANSACTION`
 - `USER_PAYMENT_BURST`
@@ -90,7 +90,7 @@ Required:
 }
 ```
 
-`errorType` examples:
+`errorType` 예시:
 
 - `PARSE_OR_VALIDATION_ERROR`
 - `LATE_EVENT`

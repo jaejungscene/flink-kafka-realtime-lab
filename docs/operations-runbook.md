@@ -1,6 +1,6 @@
-# Operations Runbook
+# 운영 Runbook
 
-## Local Startup
+## 로컬 시작
 
 ```bash
 make build
@@ -9,7 +9,7 @@ make produce
 make smoke
 ```
 
-## Health Checks
+## 상태 확인
 
 ```bash
 docker compose ps
@@ -19,13 +19,13 @@ make topics
 make lag
 ```
 
-Expected:
+기대 상태:
 
-- Kafka is healthy.
-- Flink has a running job named `flink-kraft-realtime-lab`.
-- `alerts.fraud`, `transactions.aggregates`, and `transactions.dlq` receive messages after the generator runs.
+- Kafka가 healthy 상태입니다.
+- Flink에 `flink-kraft-realtime-lab` job이 `RUNNING` 상태로 존재합니다.
+- Generator 실행 후 `alerts.fraud`, `transactions.aggregates`, `transactions.dlq`에 메시지가 들어옵니다.
 
-## Topic Checks
+## 토픽 확인
 
 ```bash
 make consume-alerts
@@ -35,37 +35,37 @@ make replay-dlq
 make consume-replay
 ```
 
-## Common Issues
+## 자주 만나는 문제
 
-### Flink job has no output
+### Flink job 출력이 없음
 
-- Check whether `make produce` ran after the Flink job started.
-- Aggregates emit after event-time windows close.
-- Source offsets start at `latest`, so old messages are intentionally skipped.
+- Flink job이 시작된 뒤 `make produce`를 실행했는지 확인합니다.
+- Aggregate는 event-time window가 닫힌 뒤 발행됩니다.
+- Source offset은 `latest`에서 시작하므로, job 시작 전의 오래된 메시지는 의도적으로 건너뜁니다.
 
-### Consumer lag grows
+### Consumer lag 증가
 
-- Run `make lag`.
-- Increase Flink parallelism only after checking Kafka partition count.
-- Inspect Flink UI for backpressure and failed checkpoints.
+- `make lag`를 실행합니다.
+- Flink parallelism을 늘리기 전에 Kafka partition 수를 먼저 확인합니다.
+- Flink UI에서 backpressure와 checkpoint failure를 확인합니다.
 
-### DLQ has many records
+### DLQ record 증가
 
-- Check producer schema changes.
-- Inspect `reason` and `errorType`.
-- Use `make replay-dlq` only for recoverable records.
+- Producer schema 변경 여부를 확인합니다.
+- `reason`과 `errorType`을 확인합니다.
+- `make replay-dlq`는 복구 가능한 record에만 사용합니다.
 
-### Kubernetes custom resources fail
+### Kubernetes custom resource 생성 실패
 
-- Confirm Strimzi and Flink Kubernetes Operator CRDs are installed.
-- Render manifests first with `kubectl kustomize`.
-- Check operator logs before debugging application pods.
+- Strimzi와 Flink Kubernetes Operator CRD가 설치되어 있는지 확인합니다.
+- 먼저 `kubectl kustomize`로 manifest를 render합니다.
+- Application pod보다 operator log를 먼저 확인합니다.
 
-## Production Differences
+## 운영 환경과의 차이
 
-- Use 3+ Kafka brokers/controllers.
-- Use durable Flink checkpoint storage.
-- Add TLS/authentication and network policies.
-- Add Schema Registry with Avro or Protobuf.
-- Define replay access control and audit trails.
-- Monitor Kafka lag, Flink checkpoint failures, backpressure, restart count, and end-to-end latency.
+- Kafka broker/controller를 3개 이상 사용합니다.
+- Flink checkpoint storage는 durable storage를 사용합니다.
+- TLS/authentication과 network policy를 추가합니다.
+- Avro 또는 Protobuf 기반 Schema Registry를 추가합니다.
+- Replay 권한과 audit trail을 정의합니다.
+- Kafka lag, Flink checkpoint failure, backpressure, restart count, end-to-end latency를 모니터링합니다.
