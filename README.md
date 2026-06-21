@@ -1,4 +1,4 @@
-# Flink KRaft Realtime Lab
+# Flink Kafka(KRaft) Realtime Lab
 
 Kafka KRaft와 Apache Flink로 실시간 집계, 알람 판단, DLQ, replay, late event 처리를 학습하고 실무 설계에 참고할 수 있는 스트리밍 랩입니다.
 
