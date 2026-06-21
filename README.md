@@ -37,6 +37,12 @@ flowchart LR
 - `transactions.dlq`: 파싱 실패, 검증 실패, late event 격리
 - `transactions.replay`: DLQ 보정 후 재처리 topic
 
+## Start Here
+
+- [Project Structure](docs/project-structure.md): 전체 구성, 서비스 역할, topic/data flow, Docker/K8s 구조
+- [How To Run](docs/how-to-run.md): Docker Compose와 Kubernetes 실행 방법
+- [Test Scenarios](docs/test-scenarios.md): 알람, 집계, DLQ, replay, late event 실험 방법
+
 ## Quick Start: Docker Compose
 
 Prerequisite: Docker Desktop or OrbStack must be running.
