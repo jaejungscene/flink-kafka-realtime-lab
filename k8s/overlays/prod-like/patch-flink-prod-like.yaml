@@ -1,0 +1,22 @@
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  name: realtime-lab-flink
+  namespace: realtime-lab
+spec:
+  flinkConfiguration:
+    taskmanager.numberOfTaskSlots: "4"
+    execution.checkpointing.interval: "10000"
+    state.checkpoints.dir: file:///tmp/flink-checkpoints
+  jobManager:
+    resource:
+      memory: "2048m"
+      cpu: 1
+  taskManager:
+    replicas: 2
+    resource:
+      memory: "4096m"
+      cpu: 2
+  job:
+    parallelism: 4
+    upgradeMode: savepoint

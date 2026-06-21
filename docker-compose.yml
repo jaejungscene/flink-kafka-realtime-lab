@@ -1,0 +1,164 @@
+services:
+  kafka:
+    image: apache/kafka:4.1.2
+    hostname: kafka
+    container_name: realtime-lab-kafka
+    ports:
+      - "29092:29092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    healthcheck:
+      test: [ "CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list >/dev/null 2>&1" ]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  topic-init:
+    image: apache/kafka:4.1.2
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: [ "/bin/bash", "/scripts/create-topics.sh" ]
+    volumes:
+      - ./scripts:/scripts:ro
+
+  flink-jobmanager:
+    build:
+      context: ./flink-job
+      target: runtime
+    container_name: realtime-lab-flink-jobmanager
+    depends_on:
+      topic-init:
+        condition: service_completed_successfully
+    ports:
+      - "8081:8081"
+    command: jobmanager
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        state.backend.type: hashmap
+        execution.checkpointing.interval: 10000
+        execution.checkpointing.mode: AT_LEAST_ONCE
+        restart-strategy.type: fixed-delay
+        restart-strategy.fixed-delay.attempts: 3
+        restart-strategy.fixed-delay.delay: 10 s
+
+  flink-taskmanager:
+    build:
+      context: ./flink-job
+      target: runtime
+    container_name: realtime-lab-flink-taskmanager
+    depends_on:
+      flink-jobmanager:
+        condition: service_started
+    command: taskmanager
+    scale: 1
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        state.backend.type: hashmap
+        execution.checkpointing.interval: 10000
+        execution.checkpointing.mode: AT_LEAST_ONCE
+        restart-strategy.type: fixed-delay
+        restart-strategy.fixed-delay.attempts: 3
+        restart-strategy.fixed-delay.delay: 10 s
+
+  flink-submit:
+    build:
+      context: ./flink-job
+      target: runtime
+    container_name: realtime-lab-flink-submit
+    depends_on:
+      flink-jobmanager:
+        condition: service_started
+      flink-taskmanager:
+        condition: service_started
+      topic-init:
+        condition: service_completed_successfully
+    command:
+      - /bin/bash
+      - -lc
+      - |
+        sleep 8
+        flink run -d \
+          -m flink-jobmanager:8081 \
+          /opt/flink/usrlib/realtime-lab-flink-job.jar \
+          --bootstrapServers kafka:9092 \
+          --rawTopic transactions.raw \
+          --replayTopic transactions.replay \
+          --alertTopic alerts.fraud \
+          --aggregateTopic transactions.aggregates \
+          --dlqTopic transactions.dlq
+    restart: "no"
+
+  generator:
+    build:
+      context: ./generator
+    profiles: [ "tools" ]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      RAW_TOPIC: transactions.raw
+      EVENTS_PER_SECOND: 25
+      RUN_SECONDS: 120
+
+  replayer:
+    build:
+      context: ./replayer
+    profiles: [ "tools" ]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      DLQ_TOPIC: transactions.dlq
+      REPLAY_TOPIC: transactions.replay
+      MAX_MESSAGES: 50
+
+  api:
+    build:
+      context: ./api
+    container_name: realtime-lab-api
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: realtime-lab-kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local-kraft
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: [ "observability" ]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro

@@ -1,0 +1,15 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: realtime-lab-generator
+  namespace: realtime-lab
+spec:
+  template:
+    spec:
+      containers:
+        - name: generator
+          env:
+            - name: EVENTS_PER_SECOND
+              value: "15"
+            - name: RUN_SECONDS
+              value: "60"

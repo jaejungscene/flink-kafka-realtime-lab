@@ -1,0 +1,25 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: realtime-lab-generator
+  namespace: realtime-lab
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: realtime-lab-generator
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: generator
+          image: realtime-lab-generator:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: realtime-lab-config
+          env:
+            - name: EVENTS_PER_SECOND
+              value: "25"
+            - name: RUN_SECONDS
+              value: "120"

@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  flink-job-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Test Flink job
+        working-directory: flink-job
+        run: mvn test
+
+  docker-compose-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose file
+        run: docker compose config
+
+  python-and-k8s-static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+      - name: Compile Python tools
+        run: python3 -m py_compile api/src/main.py generator/src/producer.py replayer/src/replay_dlq.py
+      - name: Render Kubernetes dev overlay
+        run: kubectl kustomize k8s/overlays/dev >/tmp/realtime-lab-dev.yaml
+      - name: Render Kubernetes prod-like overlay
+        run: kubectl kustomize k8s/overlays/prod-like >/tmp/realtime-lab-prod-like.yaml

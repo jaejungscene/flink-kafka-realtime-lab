@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+patches:
+  - path: patch-flink-dev.yaml
+    target:
+      kind: FlinkDeployment
+      name: realtime-lab-flink
+  - path: patch-generator-dev.yaml
+    target:
+      kind: Job
+      name: realtime-lab-generator

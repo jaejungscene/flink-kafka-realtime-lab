@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: realtime-lab-api
+  namespace: realtime-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: realtime-lab-api
+  template:
+    metadata:
+      labels:
+        app: realtime-lab-api
+    spec:
+      containers:
+        - name: api
+          image: realtime-lab-api:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: realtime-lab-config
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: realtime-lab-api
+  namespace: realtime-lab
+spec:
+  selector:
+    app: realtime-lab-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000

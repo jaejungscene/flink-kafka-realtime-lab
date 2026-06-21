@@ -1,0 +1,11 @@
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaNodePool
+metadata:
+  name: dual-role
+  namespace: realtime-lab
+spec:
+  replicas: 3
+  storage:
+    type: persistent-claim
+    size: 20Gi
+    deleteClaim: false

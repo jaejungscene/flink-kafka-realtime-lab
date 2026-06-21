@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: realtime-lab-config
+  namespace: realtime-lab
+data:
+  KAFKA_BOOTSTRAP_SERVERS: realtime-lab-kafka-kafka-bootstrap:9092
+  RAW_TOPIC: transactions.raw
+  REPLAY_TOPIC: transactions.replay
+  ALERT_TOPIC: alerts.fraud
+  AGGREGATE_TOPIC: transactions.aggregates
+  DLQ_TOPIC: transactions.dlq

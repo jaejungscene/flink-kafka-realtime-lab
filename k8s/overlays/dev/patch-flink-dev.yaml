@@ -1,0 +1,11 @@
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  name: realtime-lab-flink
+  namespace: realtime-lab
+spec:
+  taskManager:
+    replicas: 1
+  job:
+    parallelism: 2
+    upgradeMode: stateless

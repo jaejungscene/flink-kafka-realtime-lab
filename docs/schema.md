@@ -1,0 +1,96 @@
+# Event Schemas
+
+현재 프로젝트는 JSON을 사용합니다. 실무에서는 Avro 또는 Protobuf와 Schema Registry를 붙이는 구성을 권장합니다.
+
+## Topics
+
+| Topic | Purpose |
+| --- | --- |
+| `transactions.raw` | 원천 결제/ML 이벤트 |
+| `transactions.replay` | DLQ 보정 후 재처리 이벤트 |
+| `transactions.aggregates` | Flink 실시간 집계 결과 |
+| `alerts.fraud` | Flink 알람 판단 결과 |
+| `transactions.dlq` | 파싱/검증/late event 격리 |
+
+## `transactions.raw` and `transactions.replay`
+
+```json
+{
+  "eventId": "8d6296df-8fdf-49fe-87a2-cf9476f54f3d",
+  "userId": "user-001",
+  "merchantId": "merchant-07",
+  "category": "electronics",
+  "eventTime": 1760000000000,
+  "amount": 129.99,
+  "currency": "USD",
+  "country": "KR",
+  "channel": "mobile",
+  "deviceId": "device-010",
+  "mlFraudScore": 0.42,
+  "paymentStatus": "APPROVED",
+  "ipRisk": 35
+}
+```
+
+Required:
+
+- `eventId`
+- `userId`
+- `eventTime`
+- `amount >= 0`
+
+## `alerts.fraud`
+
+`alertType` examples:
+
+- `HIGH_RISK_TRANSACTION`
+- `USER_PAYMENT_BURST`
+- `MERCHANT_ANOMALY`
+
+```json
+{
+  "alertId": "26a0b4c6-4f02-44e8-88c1-271a203d2a65",
+  "alertType": "HIGH_RISK_TRANSACTION",
+  "severity": "CRITICAL",
+  "key": "user-001",
+  "reason": "single event exceeded fraud rule threshold",
+  "windowStart": 1760000000000,
+  "windowEnd": 1760000000000,
+  "eventTime": 1760000000000,
+  "metricValue": 0.98,
+  "sampleEventId": "8d6296df-8fdf-49fe-87a2-cf9476f54f3d"
+}
+```
+
+## `transactions.aggregates`
+
+```json
+{
+  "aggregateType": "COUNTRY_CATEGORY_1M",
+  "key": "KR|electronics|merchant-07",
+  "windowStart": 1760000000000,
+  "windowEnd": 1760000060000,
+  "eventCount": 42,
+  "totalAmount": 8392.12,
+  "avgAmount": 199.81,
+  "avgFraudScore": 0.23
+}
+```
+
+## `transactions.dlq`
+
+```json
+{
+  "errorType": "PARSE_OR_VALIDATION_ERROR",
+  "reason": "eventId is required",
+  "sourceTopic": "transactions.raw,transactions.replay",
+  "replayTopic": "transactions.replay",
+  "rawValue": "{\"eventId\":\"\"}",
+  "observedAt": 1760000000000
+}
+```
+
+`errorType` examples:
+
+- `PARSE_OR_VALIDATION_ERROR`
+- `LATE_EVENT`
