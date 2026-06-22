@@ -1,0 +1,19 @@
+{
+  "type": "record",
+  "name": "FraudAlert",
+  "namespace": "com.example.realtimelab.schema",
+  "doc": "Flink 알람 판단 결과 스키마.",
+  "fields": [
+    { "name": "alertId", "type": "string" },
+    { "name": "alertType", "type": "string" },
+    { "name": "severity", "type": "string" },
+    { "name": "key", "type": "string" },
+    { "name": "reason", "type": "string" },
+    { "name": "windowStart", "type": "long" },
+    { "name": "windowEnd", "type": "long" },
+    { "name": "eventTime", "type": "long" },
+    { "name": "metricValue", "type": "double" },
+    { "name": "sampleEventId", "type": [ "null", "string" ], "default": null },
+    { "name": "schemaVersion", "type": "int", "default": 1 }
+  ]
+}

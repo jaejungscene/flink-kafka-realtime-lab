@@ -4,6 +4,8 @@ Kafka KRaft와 Apache Flink로 실시간 집계, 알람 판단, DLQ, replay, lat
 
 이 프로젝트는 ML fraud score가 포함된 결제 이벤트를 Kafka로 수집하고, Flink가 event-time 기준으로 사용자/가맹점/국가별 실시간 판단을 수행한 뒤 Kafka topic으로 결과를 발행합니다.
 
+기본 실행은 가볍게 유지하고, Schema Registry, CDC, Grafana 관측성, 장애 복구 실습, Flink SQL 예제는 선택 profile과 별도 문서로 제공합니다.
+
 ## 버전 기준
 
 | 구성 요소 | 버전 | 선택 이유 |
@@ -26,6 +28,9 @@ flowchart LR
     API["FastAPI Topic Reader"] --> K
     UI["Kafka UI"] --> K
     FU["Flink UI"] --> F
+    PG["PostgreSQL CDC<br/>optional"] -.-> K
+    SR["Schema Registry<br/>optional"] -.-> K
+    OBS["Prometheus/Grafana<br/>optional"] -.-> API
 ```
 
 ## 핵심 시나리오
@@ -36,12 +41,22 @@ flowchart LR
 - `COUNTRY_CATEGORY_1M`: 국가/카테고리/가맹점 기준 1분 실시간 집계
 - `transactions.dlq`: 파싱 실패, 검증 실패, late event 격리
 - `transactions.replay`: DLQ 보정 후 재처리 topic
+- `merchant_risk_profiles`: PostgreSQL CDC 기반 reference data topic
+- Schema Registry: Avro schema contract와 evolution 학습
+- Observability: topic message count, DLQ, alert, consumer lag 관측
+- Failure recovery: TaskManager 장애, Kafka 재시작, savepoint 실습
+- Flink SQL: 동일 집계 요구사항을 SQL로 표현한 비교 예제
 
 ## 먼저 읽기
 
 - [프로젝트 구성](docs/project-structure.md): 전체 구성, 서비스 역할, topic/data flow, Docker/K8s 구조
 - [실행 방법](docs/how-to-run.md): Docker Compose와 Kubernetes 실행 방법
 - [테스트 시나리오](docs/test-scenarios.md): 알람, 집계, DLQ, replay, late event 실험 방법
+- [Schema Registry 가이드](docs/schema-registry-guide.md): Avro schema contract와 evolution
+- [관측성 가이드](docs/observability-guide.md): Prometheus/Grafana와 운영 metric
+- [장애와 복구 실습](docs/failure-recovery-guide.md): TaskManager/Kafka 장애, 부하, savepoint
+- [CDC 가이드](docs/cdc-guide.md): PostgreSQL reference data를 Kafka topic으로 흘리는 예제
+- [Flink SQL 가이드](docs/flink-sql-guide.md): DataStream API와 SQL 접근 비교
 
 ## 빠른 시작: Docker Compose
 
@@ -64,6 +79,9 @@ make consume-aggregates
 make consume-dlq
 make replay-dlq
 make consume-replay
+make observe-up
+make schema-up
+make schema-register
 ```
 
 대시보드:
@@ -71,6 +89,30 @@ make consume-replay
 - Flink UI: http://localhost:8081
 - Kafka UI: http://localhost:8080
 - FastAPI docs: http://localhost:8000/docs
+- Prometheus: http://localhost:9090
+- Grafana: http://localhost:3000
+
+## 선택 확장 실행
+
+```bash
+# Schema Registry에 Avro schema 등록
+make schema-up
+make schema-register
+
+# Prometheus/Grafana 관측성
+make observe-up
+
+# PostgreSQL CDC + Debezium Kafka Connect
+make cdc-up
+make cdc-register
+make cdc-update-merchant
+
+# 장애/복구/부하 실습
+make chaos-kill-taskmanager
+make chaos-restart-kafka
+make produce-high-load
+make savepoint
+```
 
 ## Kubernetes 실행
 
@@ -98,10 +140,14 @@ Operator 사전 조건, image naming, 배포 순서는 [Kubernetes 가이드](do
 .
 ├── api/             # FastAPI topic reader
 ├── docs/            # 가이드, 스키마, runbook, review cycle 문서
+├── cdc/             # PostgreSQL CDC와 Debezium connector 예제
 ├── flink-job/       # Java Flink DataStream job
+├── flink-sql/       # Flink SQL 집계 예제
 ├── generator/       # synthetic transaction producer
 ├── k8s/             # Strimzi + Flink Operator manifests
+├── observability/   # Prometheus/Grafana starter dashboard
 ├── replayer/        # DLQ to replay topic helper
+├── schemas/         # Avro schema contract 예제
 ├── scripts/         # topic 생성과 smoke test helper
 └── docker-compose.yml
 ```

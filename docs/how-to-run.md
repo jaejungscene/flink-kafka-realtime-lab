@@ -24,6 +24,11 @@ cd flink-kafka-realtime-lab
 | `8000` | FastAPI |
 | `8080` | Kafka UI |
 | `8081` | Flink UI |
+| `8085` | Schema Registry |
+| `9090` | Prometheus |
+| `3000` | Grafana |
+| `5432` | PostgreSQL CDC source |
+| `8083` | Kafka Connect |
 | `29092` | Kafka host listener |
 
 ### 1단계: 빌드
@@ -128,7 +133,51 @@ make replay-dlq
 make down
 ```
 
-## 3. Kubernetes로 실행하기
+## 3. 선택 확장 실행
+
+### Schema Registry
+
+```bash
+make schema-up
+make schema-register
+curl http://localhost:8085/subjects
+```
+
+자세한 설명은 [Schema Registry 가이드](schema-registry-guide.md)를 참고합니다.
+
+### Prometheus/Grafana 관측성
+
+```bash
+make observe-up
+make produce
+curl http://localhost:8000/metrics
+```
+
+Grafana는 http://localhost:3000 에서 `admin/admin`으로 접속합니다. 자세한 설명은 [관측성 가이드](observability-guide.md)를 참고합니다.
+
+### PostgreSQL CDC
+
+```bash
+make cdc-up
+make cdc-register
+make cdc-update-merchant
+make consume-merchant-profiles
+```
+
+자세한 설명은 [CDC 가이드](cdc-guide.md)를 참고합니다.
+
+### 장애/복구/부하 실습
+
+```bash
+make chaos-kill-taskmanager
+make chaos-restart-kafka
+make produce-high-load
+make savepoint
+```
+
+자세한 설명은 [장애와 복구 실습 가이드](failure-recovery-guide.md)를 참고합니다.
+
+## 4. Kubernetes로 실행하기
 
 Kubernetes manifests는 Strimzi Kafka Operator와 Flink Kubernetes Operator를 사용하는 실무형 참고 구성입니다.
 
@@ -226,14 +275,14 @@ prod-like overlay를 적용했다면:
 kubectl delete -k k8s/overlays/prod-like
 ```
 
-## 4. Kubernetes 주의사항
+## 5. Kubernetes 주의사항
 
 - Strimzi와 Flink Operator CRD가 없으면 `Kafka`, `KafkaTopic`, `KafkaNodePool`, `FlinkDeployment` 리소스가 생성되지 않습니다.
 - base image 이름은 예시입니다. 실제 cluster에서는 registry 경로를 붙여야 합니다.
 - prod-like overlay도 실제 production 완성본은 아닙니다. TLS, auth, network policy, durable checkpoint storage, metrics, alerting을 추가해야 합니다.
 - Flink checkpoint path는 production storage로 바꾸어야 합니다.
 
-## 5. 문제 해결
+## 6. 문제 해결
 
 | 증상 | 확인할 것 |
 | --- | --- |

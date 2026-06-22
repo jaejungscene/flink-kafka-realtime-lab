@@ -285,6 +285,110 @@ kubectl kustomize k8s/overlays/prod-like
 - 로컬 compose는 빠른 실험을 위한 환경입니다.
 - K8s manifests는 팀 운영과 GitOps 구조를 이해하기 위한 참고 자료입니다.
 
+## 시나리오 10: Schema Registry contract 확인
+
+목적:
+
+- Kafka topic별 schema contract를 어떻게 관리하는지 확인합니다.
+
+실행:
+
+```bash
+make schema-up
+make schema-register
+curl http://localhost:8085/subjects
+```
+
+기대 결과:
+
+- `transactions.raw-value`, `alerts.fraud-value`, `transactions.aggregates-value`, `transactions.dlq-value` subject가 등록됩니다.
+
+학습 포인트:
+
+- JSON만으로는 팀 간 event contract를 강제하기 어렵습니다.
+- Schema Registry는 producer/consumer 변경을 review 가능한 계약으로 만듭니다.
+
+## 시나리오 11: Observability와 lag 관찰
+
+목적:
+
+- Prometheus/Grafana로 DLQ, alert, topic message count, consumer lag를 관찰합니다.
+
+실행:
+
+```bash
+make observe-up
+make produce-high-load
+make lag
+```
+
+확인:
+
+- Prometheus: http://localhost:9090
+- Grafana: http://localhost:3000
+- API metrics: http://localhost:8000/metrics
+
+학습 포인트:
+
+- Lag는 단순 숫자가 아니라 처리량, partition 수, checkpoint, backpressure를 함께 봐야 하는 운영 신호입니다.
+
+## 시나리오 12: 장애와 복구
+
+목적:
+
+- Flink TaskManager 장애와 Kafka 재시작 상황에서 job이 어떻게 회복되는지 확인합니다.
+
+실행:
+
+```bash
+make chaos-kill-taskmanager
+make chaos-restart-kafka
+curl http://localhost:8081/jobs
+make lag
+```
+
+학습 포인트:
+
+- Checkpoint와 restart strategy는 장애 복구의 핵심입니다.
+- 단일 Kafka broker는 학습용으로 충분하지만 운영 고가용성 구성은 아닙니다.
+
+## 시나리오 13: CDC reference data
+
+목적:
+
+- DB 변경이 Kafka topic으로 전달되는 흐름을 확인합니다.
+
+실행:
+
+```bash
+make cdc-up
+make cdc-register
+make cdc-update-merchant
+make consume-merchant-profiles
+```
+
+학습 포인트:
+
+- 실무 streaming rule은 event 자체뿐 아니라 DB의 reference data와 함께 판단되는 경우가 많습니다.
+- 다음 확장 과제는 `merchant_risk_profiles` topic을 Flink broadcast state로 join하는 것입니다.
+
+## 시나리오 14: Flink SQL 집계 비교
+
+목적:
+
+- 같은 1분 집계를 DataStream API와 Flink SQL로 어떻게 다르게 표현하는지 비교합니다.
+
+확인:
+
+```bash
+sed -n '1,200p' flink-sql/country_category_merchant_aggregate.sql
+```
+
+학습 포인트:
+
+- 반복적인 집계는 SQL이 간결합니다.
+- DLQ, replay, 복잡한 rule test는 DataStream API가 더 명확할 수 있습니다.
+
 ## 추천 실험 순서
 
 1. `make produce`로 raw event 생성
@@ -293,7 +397,10 @@ kubectl kustomize k8s/overlays/prod-like
 4. `transactions.dlq`에서 parse failure와 late event 확인
 5. `make replay-dlq`로 replay flow 확인
 6. `make lag`와 Flink UI로 운영 지표 확인
-7. K8s overlay를 render해 compose와 운영형 배포 차이 비교
+7. `make observe-up`으로 Grafana dashboard 확인
+8. `make schema-register`로 schema contract 확인
+9. `make cdc-register`로 reference data CDC 확인
+10. K8s overlay를 render해 compose와 운영형 배포 차이 비교
 
 ## 결과가 안 보일 때
 

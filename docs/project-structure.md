@@ -6,6 +6,8 @@
 
 이 프로젝트는 결제/ML fraud 이벤트를 Kafka KRaft로 수집하고, Flink 2.1이 event-time 기준으로 실시간 집계와 알람을 계산한 뒤 Kafka topic으로 결과를 내보내는 학습/실무 참고용 스트리밍 랩입니다.
 
+기본 경로는 Kafka/Flink/DataStream API입니다. Schema Registry, CDC, observability, Flink SQL은 선택 확장으로 제공해 운영 관점과 협업 관점을 함께 학습할 수 있게 했습니다.
+
 ## 전체 데이터 흐름
 
 ```mermaid
@@ -17,6 +19,9 @@ flowchart LR
     Flink -->|transactions.aggregates| Kafka
     Flink -->|transactions.dlq| Kafka
     API["FastAPI topic reader"] --> Kafka
+    CDC["PostgreSQL + Debezium<br/>선택"] -.->|merchant_risk_profiles| Kafka
+    Schema["Schema Registry<br/>선택"] -.-> Kafka
+    Metrics["Prometheus/Grafana<br/>선택"] -.-> API
     KafkaUI["Kafka UI"] --> Kafka
     FlinkUI["Flink UI"] --> Flink
 ```
@@ -30,6 +35,10 @@ flowchart LR
 | Generator | `generator/` | Python | 실험용 결제 이벤트 생성 |
 | Replayer | `replayer/` | Python | DLQ 이벤트를 보정해 replay topic으로 재발행 |
 | API | `api/` | FastAPI | Kafka topic 메시지 조회용 HTTP API |
+| Schema Registry | `schemas/`, `scripts/register-schemas.sh` | Avro, Schema Registry | topic별 schema contract 등록 예제 |
+| CDC | `cdc/` | PostgreSQL, Debezium Connect | reference data 변경을 Kafka topic으로 발행 |
+| Observability | `observability/` | Prometheus, Grafana | topic count, lag, DLQ, alert 관측 starter |
+| Flink SQL | `flink-sql/` | SQL 예제 | DataStream API와 SQL 구현 비교 |
 | Docker Compose | `docker-compose.yml`, `Makefile` | Docker | 로컬 학습/검증 실행 환경 |
 | Kubernetes | `k8s/` | Strimzi, Flink Operator | operator 기반 배포 참고 매니페스트 |
 | Docs | `docs/` | Markdown | 학습, 실행, 운영, 스키마, 버전 결정 문서 |
@@ -40,8 +49,10 @@ flowchart LR
 | --- | --- | --- | --- |
 | `transactions.raw` | `generator` | Flink job | 원천 결제/ML fraud 이벤트 |
 | `transactions.replay` | `replayer` | Flink job | DLQ 보정 후 재처리 이벤트 |
+| `merchant_risk_profiles` | Debezium Connect | Flink 확장 과제, console consumer | 가맹점 위험 profile CDC 이벤트 |
 | `alerts.fraud` | Flink job | API, console consumer | 단건/사용자/가맹점 알람 |
 | `transactions.aggregates` | Flink job | API, console consumer | 국가/카테고리/가맹점 1분 집계 |
+| `transactions.aggregates.sql` | Flink SQL 예제 | console consumer | SQL 기반 집계 결과 예시 |
 | `transactions.dlq` | Flink job | `replayer`, API, console consumer | 파싱 실패, 검증 실패, late event 격리 |
 
 Topic은 `scripts/create-topics.sh`에서 명시적으로 생성합니다. `KAFKA_AUTO_CREATE_TOPICS_ENABLE=false`로 두어 topic 계약이 코드와 운영 스크립트에 드러나도록 했습니다.
@@ -88,7 +99,11 @@ Flink job의 핵심 파일은 `flink-job/src/main/java/com/example/realtimelab/j
 | `replayer` | DLQ replay producer | `tools` profile |
 | `api` | topic reader API | `8000` |
 | `kafka-ui` | Kafka browser UI | `8080` |
-| `prometheus` | 관측성 placeholder | `observability` profile |
+| `schema-registry` | Avro schema registry | `8085`, `schema` profile |
+| `postgres` | CDC source database | `5432`, `cdc` profile |
+| `kafka-connect` | Debezium PostgreSQL source connector | `8083`, `cdc` profile |
+| `prometheus` | metric scrape | `9090`, `observability` profile |
+| `grafana` | starter dashboard | `3000`, `observability` profile |
 
 Compose는 로컬 학습용이므로 Kafka/Flink는 단일 노드입니다. 운영 환경에서는 K8s `prod-like` overlay처럼 replication, persistent storage, checkpoint storage, security 설정을 별도로 설계해야 합니다.
 
@@ -109,12 +124,15 @@ K8s manifests는 바로 운영 복붙용이라기보다, 실무자가 Strimzi/Fl
 ```text
 .
 ├── api/             # Kafka topic 조회용 FastAPI 서비스
+├── cdc/             # PostgreSQL CDC와 Debezium connector 예제
 ├── docs/            # 프로젝트 구조, 실행, 시나리오, 운영/학습 문서
 ├── flink-job/       # Java Flink DataStream job과 unit test
+├── flink-sql/       # Flink SQL 집계 예제
 ├── generator/       # synthetic transaction Kafka producer
 ├── k8s/             # Strimzi + Flink Operator Kubernetes manifests
-├── observability/   # Prometheus starter config
+├── observability/   # Prometheus/Grafana starter config
 ├── replayer/        # DLQ -> replay topic 보정 도구
+├── schemas/         # Avro schema contract 예제
 ├── scripts/         # topic 생성과 smoke test script
 ├── docker-compose.yml
 └── Makefile
@@ -127,3 +145,4 @@ K8s manifests는 바로 운영 복붙용이라기보다, 실무자가 Strimzi/Fl
 - Event-time, watermark, allowed lateness를 통해 실시간성과 정확성의 tradeoff를 보여줍니다.
 - Rule을 분리해 테스트 가능한 알람 판단 구조를 만듭니다.
 - Docker Compose와 Kubernetes 배포를 모두 제공해 학습 환경과 팀 배포 환경의 차이를 비교할 수 있습니다.
+- Schema Registry, CDC, observability, chaos 실습을 선택 확장으로 제공해 협업/운영 관점까지 볼 수 있습니다.

@@ -1,0 +1,22 @@
+{
+  "type": "record",
+  "name": "TransactionEvent",
+  "namespace": "com.example.realtimelab.schema",
+  "doc": "결제 이벤트 원천 스키마. 신규 field는 기본값을 가진 optional field로 추가한다.",
+  "fields": [
+    { "name": "eventId", "type": "string" },
+    { "name": "userId", "type": "string" },
+    { "name": "merchantId", "type": [ "null", "string" ], "default": null },
+    { "name": "category", "type": [ "null", "string" ], "default": null },
+    { "name": "eventTime", "type": "long", "doc": "epoch millis" },
+    { "name": "amount", "type": "double" },
+    { "name": "currency", "type": [ "null", "string" ], "default": "USD" },
+    { "name": "country", "type": [ "null", "string" ], "default": null },
+    { "name": "channel", "type": [ "null", "string" ], "default": null },
+    { "name": "deviceId", "type": [ "null", "string" ], "default": null },
+    { "name": "mlFraudScore", "type": "double", "default": 0.0 },
+    { "name": "paymentStatus", "type": [ "null", "string" ], "default": null },
+    { "name": "ipRisk", "type": "int", "default": 0 },
+    { "name": "schemaVersion", "type": "int", "default": 1 }
+  ]
+}

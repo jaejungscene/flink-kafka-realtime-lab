@@ -61,4 +61,17 @@ Rule은 `RiskRules`에 분리되어 있습니다. 그래서 전체 Flink topolog
 2. `EVENTS_PER_SECOND`를 높이고 `make lag`로 consumer lag를 관찰합니다.
 3. Watermark delay를 바꾸고 aggregate latency를 비교합니다.
 4. `make replay-dlq`를 실행하고 `transactions.replay`를 확인합니다.
-5. Kubernetes overlay를 render해서 dev와 prod-like 운영 선택지를 비교합니다.
+5. `make schema-register`로 schema contract를 등록하고 subject를 확인합니다.
+6. `make observe-up`으로 Grafana dashboard에서 DLQ와 lag를 관찰합니다.
+7. `make chaos-kill-taskmanager`로 장애 후 복구를 확인합니다.
+8. `make cdc-register`로 PostgreSQL 변경이 Kafka topic으로 흐르는지 확인합니다.
+9. `flink-sql/country_category_merchant_aggregate.sql`을 읽고 DataStream 구현과 비교합니다.
+10. Kubernetes overlay를 render해서 dev와 prod-like 운영 선택지를 비교합니다.
+
+## 7. 실무 확장 주제
+
+- Schema Registry: topic contract와 schema evolution을 관리합니다.
+- Observability: lag, DLQ, alert count, checkpoint 실패를 함께 봅니다.
+- Failure recovery: checkpoint, restart strategy, savepoint를 운영 절차로 연결합니다.
+- CDC: DB reference data를 streaming rule에 반영합니다.
+- Flink SQL: 단순 집계는 SQL로, 복잡한 rule/DLQ는 DataStream API로 나누어 볼 수 있습니다.

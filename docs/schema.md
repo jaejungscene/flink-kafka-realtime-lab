@@ -9,8 +9,10 @@
 | `transactions.raw` | 원천 결제/ML 이벤트 |
 | `transactions.replay` | DLQ 보정 후 재처리 이벤트 |
 | `transactions.aggregates` | Flink 실시간 집계 결과 |
+| `transactions.aggregates.sql` | Flink SQL 집계 예제 결과 |
 | `alerts.fraud` | Flink 알람 판단 결과 |
 | `transactions.dlq` | 파싱/검증/late event 격리 |
+| `merchant_risk_profiles` | PostgreSQL CDC 기반 reference data |
 
 ## `transactions.raw`와 `transactions.replay`
 
@@ -94,3 +96,23 @@
 
 - `PARSE_OR_VALIDATION_ERROR`
 - `LATE_EVENT`
+
+## `merchant_risk_profiles`
+
+CDC 선택 profile을 실행하면 PostgreSQL의 `merchant_risk_profiles` table 변경이 이 topic으로 발행됩니다.
+
+```json
+{
+  "merchant_id": "merchant-hot",
+  "risk_tier": "HIGH",
+  "risk_multiplier": 1.8,
+  "manual_review_required": true,
+  "updated_at": "2026-06-22T10:00:00Z"
+}
+```
+
+이 topic은 Flink broadcast state join을 학습하기 위한 reference data 예제입니다.
+
+## Avro schema contract
+
+`schemas/` 디렉터리에는 topic별 Avro schema 예제가 있습니다. 등록 방법은 [Schema Registry 가이드](schema-registry-guide.md)를 참고하세요.

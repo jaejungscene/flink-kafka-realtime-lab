@@ -1,0 +1,28 @@
+{
+  "name": "merchant-risk-profiles-source",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "lab",
+    "database.password": "lab",
+    "database.dbname": "realtime_lab",
+    "topic.prefix": "cdc",
+    "plugin.name": "pgoutput",
+    "slot.name": "realtime_lab_slot",
+    "publication.autocreate.mode": "filtered",
+    "table.include.list": "public.merchant_risk_profiles",
+    "tombstones.on.delete": "false",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+    "transforms": "unwrap,route",
+    "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+    "transforms.unwrap.drop.tombstones": "true",
+    "transforms.unwrap.add.fields": "op,source.ts_ms",
+    "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+    "transforms.route.regex": "cdc.public.merchant_risk_profiles",
+    "transforms.route.replacement": "merchant_risk_profiles"
+  }
+}

@@ -107,3 +107,102 @@
 - Static check
 - Manifest render check
 - CI workflow coverage
+
+## 확장 1차 Cycle: Schema Registry
+
+완성:
+
+- `schemas/`에 topic별 Avro schema 예제를 추가했습니다.
+- Schema Registry와 schema 등록 script를 Docker Compose profile로 추가했습니다.
+
+검토:
+
+- 기본 JSON 실행 경로를 깨지 않고 schema governance를 학습할 수 있는지 확인했습니다.
+
+수정 보완:
+
+- 본편 serialization 변경 대신 선택 실행으로 분리해 학습 난도를 낮췄습니다.
+
+테스트:
+
+- `docker compose config`
+- Avro schema JSON parse
+
+## 확장 2차 Cycle: 관측성
+
+완성:
+
+- FastAPI `/metrics` endpoint를 추가했습니다.
+- Prometheus scrape config와 Grafana starter dashboard를 추가했습니다.
+
+검토:
+
+- 실무자가 먼저 보는 lag, DLQ, alert, topic count가 드러나는지 확인했습니다.
+
+수정 보완:
+
+- Flink 내부 metric 전체를 억지로 붙이지 않고, lab에서 안정적으로 볼 수 있는 Kafka/API metric부터 제공했습니다.
+
+테스트:
+
+- Python compile
+- Prometheus/Grafana provisioning 파일 parse
+
+## 확장 3차 Cycle: 장애와 복구
+
+완성:
+
+- TaskManager kill/restart, Kafka restart, high-load produce, savepoint target을 추가했습니다.
+
+검토:
+
+- 장애 실습이 destructive하지 않고 로컬 compose 안에서 회복 가능한지 확인했습니다.
+
+수정 보완:
+
+- `make` target을 짧게 만들고 상세 설명은 `docs/failure-recovery-guide.md`로 분리했습니다.
+
+테스트:
+
+- Shell script syntax check
+- `docker compose config`
+
+## 확장 4차 Cycle: CDC와 reference data
+
+완성:
+
+- PostgreSQL, Debezium Kafka Connect, connector 등록 script, merchant risk profile seed data를 추가했습니다.
+
+검토:
+
+- Fraud stream 본편을 복잡하게 만들지 않으면서 실무 reference data join 주제를 보여주는지 확인했습니다.
+
+수정 보완:
+
+- CDC topic을 본편 join에 바로 연결하지 않고 확장 과제로 문서화했습니다.
+
+테스트:
+
+- Connector JSON parse
+- Docker Compose profile render
+
+## 확장 5차 Cycle: Flink SQL과 문서 연결
+
+완성:
+
+- 동일 집계 요구사항을 표현한 Flink SQL 예제를 추가했습니다.
+- README, 실행 문서, 시나리오 문서, 운영 runbook을 확장 기능과 연결했습니다.
+
+검토:
+
+- 학습자와 실무자가 어떤 순서로 보면 좋은지 문서에서 바로 보이는지 확인했습니다.
+
+수정 보완:
+
+- 각 확장 주제를 별도 가이드로 나누어 README가 과하게 길어지지 않게 했습니다.
+
+테스트:
+
+- Markdown fence check
+- K8s overlay render
+- 전체 정적 검증

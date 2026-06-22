@@ -25,6 +25,14 @@ spec:
 apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
 metadata:
+  name: transactions-aggregates-sql
+  namespace: realtime-lab
+spec:
+  replicas: 3
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
   name: alerts-fraud
   namespace: realtime-lab
 spec:
@@ -34,6 +42,14 @@ apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
 metadata:
   name: transactions-dlq
+  namespace: realtime-lab
+spec:
+  replicas: 3
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: merchant-risk-profiles
   namespace: realtime-lab
 spec:
   replicas: 3

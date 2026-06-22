@@ -155,6 +155,82 @@ services:
       KAFKA_CLUSTERS_0_NAME: local-kraft
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
 
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.9.2
+    profiles: [ "schema", "cdc" ]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8085:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:9092
+
+  schema-init:
+    image: curlimages/curl:8.11.1
+    profiles: [ "schema" ]
+    depends_on:
+      schema-registry:
+        condition: service_started
+    entrypoint: [ "/bin/sh", "/scripts/register-schemas.sh" ]
+    volumes:
+      - ./schemas:/schemas:ro
+      - ./scripts:/scripts:ro
+    environment:
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+
+  postgres:
+    image: postgres:17-alpine
+    profiles: [ "cdc" ]
+    ports:
+      - "5432:5432"
+    command: [ "postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=8", "-c", "max_wal_senders=8" ]
+    environment:
+      POSTGRES_DB: realtime_lab
+      POSTGRES_USER: lab
+      POSTGRES_PASSWORD: lab
+    volumes:
+      - ./cdc/postgres-init:/docker-entrypoint-initdb.d:ro
+
+  kafka-connect:
+    image: debezium/connect:3.0.0.Final
+    profiles: [ "cdc" ]
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_started
+    ports:
+      - "8083:8083"
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: realtime-lab-connect
+      CONFIG_STORAGE_TOPIC: connect-configs
+      OFFSET_STORAGE_TOPIC: connect-offsets
+      STATUS_STORAGE_TOPIC: connect-status
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+      VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_REST_ADVERTISED_HOST_NAME: kafka-connect
+
+  cdc-init:
+    image: curlimages/curl:8.11.1
+    profiles: [ "cdc" ]
+    depends_on:
+      kafka-connect:
+        condition: service_started
+    entrypoint: [ "/bin/sh", "/cdc/register-postgres-connector.sh" ]
+    volumes:
+      - ./cdc:/cdc:ro
+    environment:
+      CONNECT_URL: http://kafka-connect:8083
+
   prometheus:
     image: prom/prometheus:v3.5.0
     profiles: [ "observability" ]
@@ -162,3 +238,17 @@ services:
       - "9090:9090"
     volumes:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    image: grafana/grafana:12.1.1
+    profiles: [ "observability" ]
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro

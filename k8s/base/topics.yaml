@@ -43,6 +43,20 @@ spec:
 apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
 metadata:
+  name: transactions-aggregates-sql
+  namespace: realtime-lab
+  labels:
+    strimzi.io/cluster: realtime-lab-kafka
+spec:
+  topicName: transactions.aggregates.sql
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: 86400000
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
   name: alerts-fraud
   namespace: realtime-lab
   labels:
@@ -52,6 +66,21 @@ spec:
   partitions: 3
   replicas: 1
   config:
+    retention.ms: 604800000
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: merchant-risk-profiles
+  namespace: realtime-lab
+  labels:
+    strimzi.io/cluster: realtime-lab-kafka
+spec:
+  topicName: merchant_risk_profiles
+  partitions: 3
+  replicas: 1
+  config:
+    cleanup.policy: compact
     retention.ms: 604800000
 ---
 apiVersion: kafka.strimzi.io/v1beta2

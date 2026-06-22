@@ -1,0 +1,17 @@
+{
+  "type": "record",
+  "name": "TransactionAggregate",
+  "namespace": "com.example.realtimelab.schema",
+  "doc": "1분 window 집계 결과 스키마.",
+  "fields": [
+    { "name": "aggregateType", "type": "string" },
+    { "name": "key", "type": "string" },
+    { "name": "windowStart", "type": "long" },
+    { "name": "windowEnd", "type": "long" },
+    { "name": "eventCount", "type": "long" },
+    { "name": "totalAmount", "type": "double" },
+    { "name": "avgAmount", "type": "double" },
+    { "name": "avgFraudScore", "type": "double" },
+    { "name": "schemaVersion", "type": "int", "default": 1 }
+  ]
+}

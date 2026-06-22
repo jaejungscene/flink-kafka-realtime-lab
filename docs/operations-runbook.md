@@ -17,6 +17,7 @@ curl http://localhost:8081/jobs
 curl http://localhost:8000/health
 make topics
 make lag
+curl http://localhost:8000/metrics
 ```
 
 기대 상태:
@@ -34,6 +35,17 @@ make consume-dlq
 make replay-dlq
 make consume-replay
 ```
+
+## 선택 확장 상태 확인
+
+```bash
+curl http://localhost:8085/subjects
+curl http://localhost:9090/-/ready
+curl http://localhost:3000/api/health
+curl http://localhost:8083/connectors
+```
+
+각 명령은 Schema Registry, Prometheus, Grafana, Kafka Connect가 정상인지 확인합니다. 선택 profile을 켜지 않았다면 실패하는 것이 정상입니다.
 
 ## 자주 만나는 문제
 
@@ -55,6 +67,24 @@ make consume-replay
 - `reason`과 `errorType`을 확인합니다.
 - `make replay-dlq`는 복구 가능한 record에만 사용합니다.
 
+### Schema Registry 등록 실패
+
+- `make schema-up`을 먼저 실행했는지 확인합니다.
+- `curl http://localhost:8085/subjects`가 응답하는지 확인합니다.
+- Avro schema JSON이 깨졌는지 `schemas/*.avsc`를 확인합니다.
+
+### Kafka Connect connector 등록 실패
+
+- `make cdc-up` 이후 Connect REST API가 준비될 때까지 잠시 기다립니다.
+- `curl http://localhost:8083/connectors`를 확인합니다.
+- PostgreSQL container가 실행 중인지 `docker compose ps postgres`로 확인합니다.
+
+### Grafana dashboard가 비어 있음
+
+- `make observe-up` 뒤 `make produce`를 실행했는지 확인합니다.
+- `curl http://localhost:8000/metrics`에 metric이 나오는지 확인합니다.
+- Prometheus target `realtime-lab-api`가 up인지 확인합니다.
+
 ### Kubernetes custom resource 생성 실패
 
 - Strimzi와 Flink Kubernetes Operator CRD가 설치되어 있는지 확인합니다.
@@ -69,3 +99,4 @@ make consume-replay
 - Avro 또는 Protobuf 기반 Schema Registry를 추가합니다.
 - Replay 권한과 audit trail을 정의합니다.
 - Kafka lag, Flink checkpoint failure, backpressure, restart count, end-to-end latency를 모니터링합니다.
+- CDC reference data join은 broadcast state, TTL, schema evolution 정책까지 함께 설계합니다.
