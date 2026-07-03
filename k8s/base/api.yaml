@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: realtime-lab-api:latest
+          image: realtime-lab-api:1.0.0
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef:

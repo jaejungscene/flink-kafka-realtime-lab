@@ -13,7 +13,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: generator
-          image: realtime-lab-generator:latest
+          image: realtime-lab-generator:1.0.0
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef:

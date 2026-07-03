@@ -42,3 +42,5 @@ curl http://localhost:8085/subjects/transactions.raw-value/versions/latest
 ## 현재 범위
 
 현재 Flink job은 JSON을 계속 읽고 씁니다. Avro serialization까지 연결하지 않은 이유는 학습자가 먼저 Kafka/Flink 흐름을 이해한 뒤 schema governance를 별도 주제로 실험할 수 있게 하기 위해서입니다.
+
+Schema 등록은 `scripts/register_schemas.py`가 Python JSON encoder로 payload를 만들어 수행합니다. shell string escape로 schema JSON을 조립하지 않기 때문에 field가 늘어나도 깨질 가능성이 낮습니다.

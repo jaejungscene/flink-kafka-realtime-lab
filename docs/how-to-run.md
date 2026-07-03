@@ -190,15 +190,15 @@ Kubernetes manifests는 Strimzi Kafka Operator와 Flink Kubernetes Operator를 �
 - cluster에서 접근 가능한 container registry
 - 아래 image를 registry에 push
   - `realtime-lab-flink-job:2.1.2`
-  - `realtime-lab-api:latest`
-  - `realtime-lab-generator:latest`
+  - `realtime-lab-api:1.0.0`
+  - `realtime-lab-generator:1.0.0`
 
 로컬 image 이름을 K8s manifest의 image 이름에 맞추는 예시는 아래와 같습니다.
 
 ```bash
 docker build -t realtime-lab-flink-job:2.1.2 ./flink-job
-docker build -t realtime-lab-api:latest ./api
-docker build -t realtime-lab-generator:latest ./generator
+docker build -t realtime-lab-api:1.0.0 ./api
+docker build -t realtime-lab-generator:1.0.0 ./generator
 ```
 
 원격 cluster라면 registry 경로를 붙여 push하고, `k8s/base/*.yaml` 또는 overlay에서 image 값을 registry 경로로 바꾸어야 합니다.

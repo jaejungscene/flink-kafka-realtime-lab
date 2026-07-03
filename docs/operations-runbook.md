@@ -66,6 +66,7 @@ curl http://localhost:8083/connectors
 - Producer schema 변경 여부를 확인합니다.
 - `reason`과 `errorType`을 확인합니다.
 - `make replay-dlq`는 복구 가능한 record에만 사용합니다.
+- Replay record에는 `replayId`, `replayRunId`, `replaySourceTopic`, `replaySourcePartition`, `replaySourceOffset` metadata가 추가됩니다.
 
 ### Schema Registry 등록 실패
 
@@ -95,6 +96,7 @@ curl http://localhost:8083/connectors
 
 - Kafka broker/controller를 3개 이상 사용합니다.
 - Flink checkpoint storage는 durable storage를 사용합니다.
+- `prod-like` overlay의 `s3://replace-me-realtime-lab/...` 값은 실제 object storage 경로로 바꾸어야 합니다.
 - TLS/authentication과 network policy를 추가합니다.
 - Avro 또는 Protobuf 기반 Schema Registry를 추가합니다.
 - Replay 권한과 audit trail을 정의합니다.

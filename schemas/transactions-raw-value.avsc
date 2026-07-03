@@ -10,13 +10,19 @@
     { "name": "category", "type": [ "null", "string" ], "default": null },
     { "name": "eventTime", "type": "long", "doc": "epoch millis" },
     { "name": "amount", "type": "double" },
-    { "name": "currency", "type": [ "null", "string" ], "default": "USD" },
+    { "name": "currency", "type": [ "string", "null" ], "default": "USD" },
     { "name": "country", "type": [ "null", "string" ], "default": null },
     { "name": "channel", "type": [ "null", "string" ], "default": null },
     { "name": "deviceId", "type": [ "null", "string" ], "default": null },
     { "name": "mlFraudScore", "type": "double", "default": 0.0 },
     { "name": "paymentStatus", "type": [ "null", "string" ], "default": null },
     { "name": "ipRisk", "type": "int", "default": 0 },
+    { "name": "replayId", "type": [ "null", "string" ], "default": null },
+    { "name": "replayRunId", "type": [ "null", "string" ], "default": null },
+    { "name": "replaySourceTopic", "type": [ "null", "string" ], "default": null },
+    { "name": "replaySourcePartition", "type": [ "null", "int" ], "default": null },
+    { "name": "replaySourceOffset", "type": [ "null", "long" ], "default": null },
+    { "name": "replayedFromDlqAt", "type": [ "null", "long" ], "default": null },
     { "name": "schemaVersion", "type": "int", "default": 1 }
   ]
 }

@@ -35,7 +35,7 @@ flowchart LR
 | Generator | `generator/` | Python | 실험용 결제 이벤트 생성 |
 | Replayer | `replayer/` | Python | DLQ 이벤트를 보정해 replay topic으로 재발행 |
 | API | `api/` | FastAPI | Kafka topic 메시지 조회용 HTTP API |
-| Schema Registry | `schemas/`, `scripts/register-schemas.sh` | Avro, Schema Registry | topic별 schema contract 등록 예제 |
+| Schema Registry | `schemas/`, `scripts/register_schemas.py` | Avro, Schema Registry | topic별 schema contract 등록 예제 |
 | CDC | `cdc/` | PostgreSQL, Debezium Connect | reference data 변경을 Kafka topic으로 발행 |
 | Observability | `observability/` | Prometheus, Grafana | topic count, lag, DLQ, alert 관측 starter |
 | Flink SQL | `flink-sql/` | SQL 예제 | DataStream API와 SQL 구현 비교 |

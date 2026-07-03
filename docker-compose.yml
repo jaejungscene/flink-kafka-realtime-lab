@@ -2,7 +2,6 @@ services:
   kafka:
     image: apache/kafka:4.1.2
     hostname: kafka
-    container_name: realtime-lab-kafka
     ports:
       - "29092:29092"
     environment:
@@ -39,7 +38,6 @@ services:
     build:
       context: ./flink-job
       target: runtime
-    container_name: realtime-lab-flink-jobmanager
     depends_on:
       topic-init:
         condition: service_completed_successfully
@@ -60,7 +58,6 @@ services:
     build:
       context: ./flink-job
       target: runtime
-    container_name: realtime-lab-flink-taskmanager
     depends_on:
       flink-jobmanager:
         condition: service_started
@@ -81,7 +78,6 @@ services:
     build:
       context: ./flink-job
       target: runtime
-    container_name: realtime-lab-flink-submit
     depends_on:
       flink-jobmanager:
         condition: service_started
@@ -102,7 +98,11 @@ services:
           --replayTopic transactions.replay \
           --alertTopic alerts.fraud \
           --aggregateTopic transactions.aggregates \
-          --dlqTopic transactions.dlq
+          --dlqTopic transactions.dlq \
+          --consumerGroup flink-realtime-lab \
+          --checkpointIntervalMillis 10000 \
+          --watermarkDelaySeconds 10 \
+          --allowedLatenessSeconds 30
     restart: "no"
 
   generator:
@@ -134,7 +134,6 @@ services:
   api:
     build:
       context: ./api
-    container_name: realtime-lab-api
     depends_on:
       kafka:
         condition: service_healthy
@@ -145,7 +144,6 @@ services:
 
   kafka-ui:
     image: provectuslabs/kafka-ui:v0.7.2
-    container_name: realtime-lab-kafka-ui
     depends_on:
       kafka:
         condition: service_healthy
@@ -169,12 +167,12 @@ services:
       SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:9092
 
   schema-init:
-    image: curlimages/curl:8.11.1
+    image: python:3.12-slim
     profiles: [ "schema" ]
     depends_on:
       schema-registry:
         condition: service_started
-    entrypoint: [ "/bin/sh", "/scripts/register-schemas.sh" ]
+    entrypoint: [ "python", "/scripts/register_schemas.py" ]
     volumes:
       - ./schemas:/schemas:ro
       - ./scripts:/scripts:ro

@@ -42,3 +42,11 @@ spec:
       - transactions.aggregates
       - --dlqTopic
       - transactions.dlq
+      - --consumerGroup
+      - flink-realtime-lab
+      - --checkpointIntervalMillis
+      - "10000"
+      - --watermarkDelaySeconds
+      - "10"
+      - --allowedLatenessSeconds
+      - "30"

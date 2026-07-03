@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SAVEPOINT_DIR="${SAVEPOINT_DIR:-/tmp/flink-savepoints}"
 JOB_ID="$(curl -fsS http://localhost:8081/jobs | python3 -c 'import json,sys; jobs=json.load(sys.stdin).get("jobs", []); running=[j for j in jobs if j.get("status") == "RUNNING"]; print(running[0]["id"] if running else "")')"
 
 if [ -z "${JOB_ID}" ]; then
@@ -8,4 +9,4 @@ if [ -z "${JOB_ID}" ]; then
   exit 1
 fi
 
-docker compose exec flink-jobmanager flink savepoint "${JOB_ID}" /tmp/flink-savepoints
+docker compose exec flink-jobmanager flink savepoint "${JOB_ID}" "${SAVEPOINT_DIR}"

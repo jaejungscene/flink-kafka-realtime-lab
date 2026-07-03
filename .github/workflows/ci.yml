@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: azure/setup-kubectl@v4
       - name: Compile Python tools
-        run: python3 -m py_compile api/src/main.py generator/src/producer.py replayer/src/replay_dlq.py
+        run: python3 -m py_compile api/src/main.py generator/src/producer.py replayer/src/replay_dlq.py scripts/register_schemas.py
       - name: Validate JSON schema and dashboard files
         run: |
           python3 - <<'PY'
@@ -53,7 +53,7 @@ jobs:
       - name: Validate shell scripts
         run: |
           bash -n scripts/create-topics.sh scripts/chaos-kill-taskmanager.sh scripts/flink-savepoint.sh
-          sh -n scripts/register-schemas.sh cdc/register-postgres-connector.sh
+          sh -n cdc/register-postgres-connector.sh
       - name: Validate Markdown fences
         run: |
           for f in README.md docs/*.md; do

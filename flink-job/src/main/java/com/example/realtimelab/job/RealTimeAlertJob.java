@@ -12,6 +12,9 @@ import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.AggregateFunction;
 import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.api.common.functions.MapFunction;
+import org.apache.flink.api.common.serialization.SerializationSchema;
+import org.apache.flink.api.common.serialization.SimpleStringSchema;
+import org.apache.flink.connector.base.DeliveryGuarantee;
 import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
 import org.apache.flink.connector.kafka.sink.KafkaSink;
 import org.apache.flink.connector.kafka.source.KafkaSource;
@@ -24,9 +27,10 @@ import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindo
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.OutputTag;
-import org.apache.flink.api.common.serialization.SimpleStringSchema;
+import org.apache.flink.streaming.api.functions.ProcessFunction;
 
 import java.io.Serializable;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -46,14 +50,18 @@ public class RealTimeAlertJob {
         String alertTopic = params.getOrDefault("alertTopic", "alerts.fraud");
         String aggregateTopic = params.getOrDefault("aggregateTopic", "transactions.aggregates");
         String dlqTopic = params.getOrDefault("dlqTopic", "transactions.dlq");
+        String consumerGroup = params.getOrDefault("consumerGroup", "flink-realtime-lab");
+        long checkpointIntervalMillis = longParam(params, "checkpointIntervalMillis", 10_000L);
+        Duration watermarkDelay = Duration.ofSeconds(longParam(params, "watermarkDelaySeconds", 10L));
+        Duration allowedLateness = Duration.ofSeconds(longParam(params, "allowedLatenessSeconds", 30L));
 
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.enableCheckpointing(10_000L);
+        env.enableCheckpointing(checkpointIntervalMillis);
 
         KafkaSource<String> rawSource = KafkaSource.<String>builder()
                 .setBootstrapServers(bootstrapServers)
                 .setTopics(List.of(rawTopic, replayTopic))
-                .setGroupId("flink-realtime-lab")
+                .setGroupId(consumerGroup)
                 .setStartingOffsets(OffsetsInitializer.latest())
                 .setValueOnlyDeserializer(new SimpleStringSchema())
                 .build();
@@ -63,56 +71,70 @@ public class RealTimeAlertJob {
                 .process(new TransactionParser(DLQ_TAG, rawTopic + "," + replayTopic, replayTopic))
                 .name("parse-and-validate-transactions");
 
-        DataStream<TransactionEvent> events = parsedEvents
+        SingleOutputStreamOperator<TransactionEvent> events = parsedEvents
                 .assignTimestampsAndWatermarks(
                         WatermarkStrategy
-                                .<TransactionEvent>forBoundedOutOfOrderness(Duration.ofSeconds(10))
+                                .<TransactionEvent>forBoundedOutOfOrderness(watermarkDelay)
                                 .withTimestampAssigner((event, timestamp) -> event.getEventTime()))
+                .process(new LateEventRouter(allowedLateness, rawTopic, replayTopic))
                 .name("event-time-watermarks");
 
         parsedEvents
                 .getSideOutput(DLQ_TAG)
-                .sinkTo(kafkaSink(bootstrapServers, dlqTopic))
+                .sinkTo(kafkaSink(bootstrapServers, dlqTopic, dlqKey()))
                 .name("sink-dlq");
 
         events
                 .filter(new HighRiskFilter())
                 .map(new HighRiskAlertMapper())
-                .sinkTo(kafkaSink(bootstrapServers, alertTopic))
+                .sinkTo(kafkaSink(bootstrapServers, alertTopic, AlertEvent::getKey))
                 .name("sink-high-risk-alerts");
 
-        events
+        SingleOutputStreamOperator<AlertEvent> userWindowAlerts = events
                 .keyBy(TransactionEvent::getUserId)
                 .window(TumblingEventTimeWindows.of(Duration.ofMinutes(1)))
-                .allowedLateness(Duration.ofSeconds(30))
+                .allowedLateness(allowedLateness)
+                .sideOutputLateData(LATE_EVENT_TAG)
                 .process(new UserWindowAlertFunction())
-                .sinkTo(kafkaSink(bootstrapServers, alertTopic))
+                .name("user-window-alerts");
+
+        userWindowAlerts
+                .sinkTo(kafkaSink(bootstrapServers, alertTopic, AlertEvent::getKey))
                 .name("sink-user-window-alerts");
 
         SingleOutputStreamOperator<AggregateEvent> aggregates = events
                 .keyBy(RealTimeAlertJob::aggregateKey)
                 .window(TumblingEventTimeWindows.of(Duration.ofMinutes(1)))
-                .allowedLateness(Duration.ofSeconds(30))
+                .allowedLateness(allowedLateness)
                 .sideOutputLateData(LATE_EVENT_TAG)
                 .aggregate(new TransactionStatsAggregate(), new TransactionAggregateWindowFunction())
                 .name("country-category-merchant-aggregates");
 
         aggregates
-                .sinkTo(kafkaSink(bootstrapServers, aggregateTopic))
+                .sinkTo(kafkaSink(bootstrapServers, aggregateTopic, AggregateEvent::getKey))
                 .name("sink-transaction-aggregates");
 
-        events
+        SingleOutputStreamOperator<AlertEvent> merchantAnomalyAlerts = events
                 .keyBy(event -> normalize(event.getMerchantId(), "merchant-unknown"))
                 .window(TumblingEventTimeWindows.of(Duration.ofMinutes(1)))
-                .allowedLateness(Duration.ofSeconds(30))
+                .allowedLateness(allowedLateness)
+                .sideOutputLateData(LATE_EVENT_TAG)
                 .aggregate(new TransactionStatsAggregate(), new MerchantAnomalyWindowFunction())
-                .sinkTo(kafkaSink(bootstrapServers, alertTopic))
+                .name("merchant-anomaly-alerts");
+
+        merchantAnomalyAlerts
+                .sinkTo(kafkaSink(bootstrapServers, alertTopic, AlertEvent::getKey))
                 .name("sink-merchant-anomaly-alerts");
 
-        aggregates
+        DataStream<DlqEvent> windowLateEvents = userWindowAlerts
                 .getSideOutput(LATE_EVENT_TAG)
-                .map(new LateEventDlqMapper(rawTopic, replayTopic))
-                .sinkTo(kafkaSink(bootstrapServers, dlqTopic))
+                .union(aggregates.getSideOutput(LATE_EVENT_TAG), merchantAnomalyAlerts.getSideOutput(LATE_EVENT_TAG))
+                .map(new LateEventDlqMapper(rawTopic, replayTopic));
+
+        events
+                .getSideOutput(DLQ_TAG)
+                .union(windowLateEvents)
+                .sinkTo(kafkaSink(bootstrapServers, dlqTopic, dlqKey()))
                 .name("sink-late-events-dlq");
 
         env.execute("flink-kraft-realtime-lab");
@@ -129,14 +151,20 @@ public class RealTimeAlertJob {
         return value == null || value.isBlank() ? fallback : value;
     }
 
-    private static <T> KafkaSink<T> kafkaSink(String bootstrapServers, String topic) {
+    private static <T> KafkaSink<T> kafkaSink(String bootstrapServers, String topic, KeyExtractor<T> keyExtractor) {
         return KafkaSink.<T>builder()
                 .setBootstrapServers(bootstrapServers)
+                .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
                 .setRecordSerializer(KafkaRecordSerializationSchema.<T>builder()
                         .setTopic(topic)
+                        .setKeySerializationSchema(new StringKeySerializationSchema<>(keyExtractor))
                         .setValueSerializationSchema(new JsonSerializationSchema<>())
                         .build())
                 .build();
+    }
+
+    private static KeyExtractor<DlqEvent> dlqKey() {
+        return event -> normalize(event.getErrorType(), "DLQ");
     }
 
     private static Map<String, String> parseArgs(String[] args) {
@@ -154,6 +182,63 @@ public class RealTimeAlertJob {
             }
         }
         return params;
+    }
+
+    private static long longParam(Map<String, String> params, String key, long fallback) {
+        String value = params.get(key);
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return Long.parseLong(value);
+    }
+
+    @FunctionalInterface
+    interface KeyExtractor<T> extends Serializable {
+        String key(T element);
+    }
+
+    static class StringKeySerializationSchema<T> implements SerializationSchema<T> {
+        private final KeyExtractor<T> keyExtractor;
+
+        StringKeySerializationSchema(KeyExtractor<T> keyExtractor) {
+            this.keyExtractor = keyExtractor;
+        }
+
+        @Override
+        public byte[] serialize(T element) {
+            String key = keyExtractor.key(element);
+            if (key == null || key.isBlank()) {
+                return null;
+            }
+            return key.getBytes(StandardCharsets.UTF_8);
+        }
+    }
+
+    static class LateEventRouter extends ProcessFunction<TransactionEvent, TransactionEvent> {
+        private final long allowedLatenessMillis;
+        private final String rawTopic;
+        private final String replayTopic;
+        private transient ObjectMapper mapper;
+
+        LateEventRouter(Duration allowedLateness, String rawTopic, String replayTopic) {
+            this.allowedLatenessMillis = allowedLateness.toMillis();
+            this.rawTopic = rawTopic;
+            this.replayTopic = replayTopic;
+        }
+
+        @Override
+        public void processElement(TransactionEvent event, Context context, Collector<TransactionEvent> out) throws Exception {
+            long currentWatermark = context.timerService().currentWatermark();
+            if (currentWatermark != Long.MIN_VALUE
+                    && event.getEventTime() + allowedLatenessMillis < currentWatermark) {
+                if (mapper == null) {
+                    mapper = ObjectMapperFactory.create();
+                }
+                context.output(DLQ_TAG, lateEventDlq(event, rawTopic, replayTopic, mapper));
+                return;
+            }
+            out.collect(event);
+        }
     }
 
     static class HighRiskFilter implements FilterFunction<TransactionEvent> {
@@ -328,20 +413,28 @@ public class RealTimeAlertJob {
             if (mapper == null) {
                 mapper = ObjectMapperFactory.create();
             }
-            String rawValue;
-            try {
-                rawValue = mapper.writeValueAsString(event);
-            } catch (Exception e) {
-                rawValue = event.getEventId();
-            }
-            return new DlqEvent(
-                    "LATE_EVENT",
-                    "event arrived after watermark and allowed lateness",
-                    rawTopic,
-                    replayTopic,
-                    rawValue,
-                    System.currentTimeMillis());
+            return lateEventDlq(event, rawTopic, replayTopic, mapper);
         }
+    }
+
+    private static DlqEvent lateEventDlq(
+            TransactionEvent event,
+            String rawTopic,
+            String replayTopic,
+            ObjectMapper mapper) {
+        String rawValue;
+        try {
+            rawValue = mapper.writeValueAsString(event);
+        } catch (Exception e) {
+            rawValue = event.getEventId();
+        }
+        return new DlqEvent(
+                "LATE_EVENT",
+                "event arrived after watermark and allowed lateness",
+                rawTopic,
+                replayTopic,
+                rawValue,
+                System.currentTimeMillis());
     }
 
     private static double round(double value) {

@@ -55,7 +55,7 @@ schema-register:
 	$(COMPOSE) --profile schema run --rm schema-init
 
 cdc-up:
-	$(COMPOSE) --profile cdc up -d postgres kafka-connect schema-registry
+	$(COMPOSE) --profile cdc up -d kafka topic-init postgres schema-registry kafka-connect
 
 cdc-register:
 	$(COMPOSE) --profile cdc run --rm cdc-init

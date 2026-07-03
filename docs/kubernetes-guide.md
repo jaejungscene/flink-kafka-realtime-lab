@@ -10,8 +10,8 @@
 - cluster에서 접근 가능한 container registry
 - registry에 push된 container image
   - `realtime-lab-flink-job:2.1.2`
-  - `realtime-lab-api:latest`
-  - `realtime-lab-generator:latest`
+  - `realtime-lab-api:1.0.0`
+  - `realtime-lab-generator:1.0.0`
 
 ## 매니페스트 렌더링
 
@@ -50,6 +50,6 @@ kubectl -n realtime-lab get kafka,kafkatopic,flinkdeployment,pod
 - topic replication factor 3
 - Flink TaskManager 2개
 - savepoint upgrade mode
-- checkpoint path placeholder
+- checkpoint/savepoint object storage placeholder
 
-실제 production에 적용하기 전에는 placeholder image 이름을 registry 경로로 바꾸고, TLS/auth, durable checkpoint storage, metrics, alerting, network policy를 회사 환경에 맞게 추가해야 합니다.
+실제 production에 적용하기 전에는 placeholder image 이름을 registry 경로로 바꾸고, `s3://replace-me-realtime-lab/...` checkpoint/savepoint 경로를 회사 object storage로 바꾸어야 합니다. TLS/auth, metrics, alerting, network policy도 회사 환경에 맞게 추가해야 합니다.

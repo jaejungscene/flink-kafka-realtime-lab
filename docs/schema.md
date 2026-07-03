@@ -30,7 +30,13 @@
   "deviceId": "device-010",
   "mlFraudScore": 0.42,
   "paymentStatus": "APPROVED",
-  "ipRisk": 35
+  "ipRisk": 35,
+  "replayId": "replay-run-local-0-42",
+  "replayRunId": "replay-run-local",
+  "replaySourceTopic": "transactions.dlq",
+  "replaySourcePartition": 0,
+  "replaySourceOffset": 42,
+  "replayedFromDlqAt": 1760000005000
 }
 ```
 
@@ -40,6 +46,8 @@
 - `userId`
 - `eventTime`
 - `amount >= 0`
+
+`replay*` field는 `transactions.replay`에서만 붙을 수 있는 audit metadata입니다.
 
 ## `alerts.fraud`
 

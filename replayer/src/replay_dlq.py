@@ -12,13 +12,20 @@ BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092")
 DLQ_TOPIC = os.getenv("DLQ_TOPIC", "transactions.dlq")
 REPLAY_TOPIC = os.getenv("REPLAY_TOPIC", "transactions.replay")
 MAX_MESSAGES = int(os.getenv("MAX_MESSAGES", "50"))
+REPLAYER_GROUP_ID = os.getenv("REPLAYER_GROUP_ID", "realtime-lab-replayer")
+REPLAY_RUN_ID = os.getenv("REPLAY_RUN_ID", f"replay-run-{uuid.uuid4()}")
 
 
 def now_millis() -> int:
     return int(datetime.now(tz=timezone.utc).timestamp() * 1000)
 
 
-def normalize_for_replay(dlq_value: dict[str, Any]) -> dict[str, Any] | None:
+def normalize_for_replay(
+    dlq_value: dict[str, Any],
+    source_topic: str,
+    source_partition: int,
+    source_offset: int,
+) -> dict[str, Any] | None:
     raw_value = dlq_value.get("rawValue")
     if not raw_value:
         return None
@@ -41,6 +48,11 @@ def normalize_for_replay(dlq_value: dict[str, Any]) -> dict[str, Any] | None:
     event["mlFraudScore"] = float(event.get("mlFraudScore", 0.0))
     event["paymentStatus"] = event.get("paymentStatus") or "REPLAYED"
     event["ipRisk"] = int(event.get("ipRisk", 0))
+    event["replayId"] = f"{REPLAY_RUN_ID}-{source_partition}-{source_offset}"
+    event["replayRunId"] = REPLAY_RUN_ID
+    event["replaySourceTopic"] = source_topic
+    event["replaySourcePartition"] = source_partition
+    event["replaySourceOffset"] = source_offset
     event["replayedFromDlqAt"] = now_millis()
     return event
 
@@ -49,12 +61,18 @@ def main() -> None:
     consumer = Consumer(
         {
             "bootstrap.servers": BOOTSTRAP_SERVERS,
-            "group.id": f"realtime-lab-replayer-{uuid.uuid4()}",
+            "group.id": REPLAYER_GROUP_ID,
             "auto.offset.reset": "earliest",
             "enable.auto.commit": False,
         }
     )
-    producer = Producer({"bootstrap.servers": BOOTSTRAP_SERVERS, "client.id": "realtime-lab-replayer"})
+    producer = Producer(
+        {
+            "bootstrap.servers": BOOTSTRAP_SERVERS,
+            "client.id": "realtime-lab-replayer",
+            "acks": "all",
+        }
+    )
 
     consumer.subscribe([DLQ_TOPIC])
     replayed = 0
@@ -75,7 +93,7 @@ def main() -> None:
                 print(f"skip invalid dlq json: {exc}", flush=True)
                 continue
 
-            event = normalize_for_replay(dlq_value)
+            event = normalize_for_replay(dlq_value, msg.topic(), msg.partition(), msg.offset())
             if not event:
                 continue
 
@@ -85,12 +103,18 @@ def main() -> None:
                 value=json.dumps(event, separators=(",", ":")),
             )
             producer.poll(0)
+            producer.flush()
+            consumer.commit(message=msg, asynchronous=False)
             replayed += 1
     finally:
         producer.flush()
         consumer.close()
 
-    print(f"replayed={replayed} from={DLQ_TOPIC} to={REPLAY_TOPIC}", flush=True)
+    print(
+        f"replayed={replayed} from={DLQ_TOPIC} to={REPLAY_TOPIC} "
+        f"group={REPLAYER_GROUP_ID} runId={REPLAY_RUN_ID}",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":
