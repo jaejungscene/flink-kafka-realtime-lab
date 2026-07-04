@@ -3,6 +3,7 @@ package com.example.realtimelab.job;
 import com.example.realtimelab.model.AggregateEvent;
 import com.example.realtimelab.model.AlertEvent;
 import com.example.realtimelab.model.DlqEvent;
+import com.example.realtimelab.model.MerchantRiskProfile;
 import com.example.realtimelab.model.TransactionEvent;
 import com.example.realtimelab.rule.RiskRules;
 import com.example.realtimelab.serde.JsonSerializationSchema;
@@ -14,20 +15,25 @@ import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.serialization.SerializationSchema;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
+import org.apache.flink.api.common.state.BroadcastState;
+import org.apache.flink.api.common.state.MapStateDescriptor;
+import org.apache.flink.api.common.state.ReadOnlyBroadcastState;
 import org.apache.flink.connector.base.DeliveryGuarantee;
 import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
 import org.apache.flink.connector.kafka.sink.KafkaSink;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
+import org.apache.flink.streaming.api.datastream.BroadcastStream;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.ProcessFunction;
+import org.apache.flink.streaming.api.functions.co.BroadcastProcessFunction;
 import org.apache.flink.streaming.api.functions.windowing.ProcessWindowFunction;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.OutputTag;
-import org.apache.flink.streaming.api.functions.ProcessFunction;
 
 import java.io.Serializable;
 import java.nio.charset.StandardCharsets;
@@ -47,6 +53,7 @@ public class RealTimeAlertJob {
         String bootstrapServers = params.getOrDefault("bootstrapServers", "kafka:9092");
         String rawTopic = params.getOrDefault("rawTopic", "transactions.raw");
         String replayTopic = params.getOrDefault("replayTopic", "transactions.replay");
+        String merchantRiskProfileTopic = params.getOrDefault("merchantRiskProfileTopic", "merchant_risk_profiles");
         String alertTopic = params.getOrDefault("alertTopic", "alerts.fraud");
         String aggregateTopic = params.getOrDefault("aggregateTopic", "transactions.aggregates");
         String dlqTopic = params.getOrDefault("dlqTopic", "transactions.dlq");
@@ -66,12 +73,28 @@ public class RealTimeAlertJob {
                 .setValueOnlyDeserializer(new SimpleStringSchema())
                 .build();
 
+        KafkaSource<String> merchantProfileSource = KafkaSource.<String>builder()
+                .setBootstrapServers(bootstrapServers)
+                .setTopics(merchantRiskProfileTopic)
+                .setGroupId(consumerGroup + "-merchant-profiles")
+                .setStartingOffsets(OffsetsInitializer.earliest())
+                .setValueOnlyDeserializer(new SimpleStringSchema())
+                .build();
+
         SingleOutputStreamOperator<TransactionEvent> parsedEvents = env
                 .fromSource(rawSource, WatermarkStrategy.noWatermarks(), "kafka-transactions-raw")
                 .process(new TransactionParser(DLQ_TAG, rawTopic + "," + replayTopic, replayTopic))
                 .name("parse-and-validate-transactions");
 
-        SingleOutputStreamOperator<TransactionEvent> events = parsedEvents
+        SingleOutputStreamOperator<MerchantRiskProfile> merchantProfiles = env
+                .fromSource(merchantProfileSource, WatermarkStrategy.noWatermarks(), "kafka-merchant-risk-profiles")
+                .process(new MerchantRiskProfileParser(DLQ_TAG, merchantRiskProfileTopic))
+                .name("parse-merchant-risk-profiles");
+
+        MapStateDescriptor<String, MerchantRiskProfile> merchantProfileState = merchantProfileStateDescriptor();
+        BroadcastStream<MerchantRiskProfile> merchantProfileBroadcast = merchantProfiles.broadcast(merchantProfileState);
+
+        SingleOutputStreamOperator<TransactionEvent> watermarkedEvents = parsedEvents
                 .assignTimestampsAndWatermarks(
                         WatermarkStrategy
                                 .<TransactionEvent>forBoundedOutOfOrderness(watermarkDelay)
@@ -79,10 +102,20 @@ public class RealTimeAlertJob {
                 .process(new LateEventRouter(allowedLateness, rawTopic, replayTopic))
                 .name("event-time-watermarks");
 
+        SingleOutputStreamOperator<TransactionEvent> events = watermarkedEvents
+                .connect(merchantProfileBroadcast)
+                .process(new MerchantRiskProfileEnrichmentFunction(merchantProfileState))
+                .name("enrich-with-merchant-risk-profiles");
+
         parsedEvents
                 .getSideOutput(DLQ_TAG)
                 .sinkTo(kafkaSink(bootstrapServers, dlqTopic, dlqKey()))
                 .name("sink-dlq");
+
+        merchantProfiles
+                .getSideOutput(DLQ_TAG)
+                .sinkTo(kafkaSink(bootstrapServers, dlqTopic, dlqKey()))
+                .name("sink-reference-data-dlq");
 
         events
                 .filter(new HighRiskFilter())
@@ -149,6 +182,13 @@ public class RealTimeAlertJob {
 
     private static String normalize(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private static MapStateDescriptor<String, MerchantRiskProfile> merchantProfileStateDescriptor() {
+        return new MapStateDescriptor<>(
+                "merchant-risk-profiles",
+                String.class,
+                MerchantRiskProfile.class);
     }
 
     private static <T> KafkaSink<T> kafkaSink(String bootstrapServers, String topic, KeyExtractor<T> keyExtractor) {
@@ -251,15 +291,22 @@ public class RealTimeAlertJob {
     static class HighRiskAlertMapper implements MapFunction<TransactionEvent, AlertEvent> {
         @Override
         public AlertEvent map(TransactionEvent event) {
+            String riskTier = normalize(event.getMerchantRiskTier(), "UNKNOWN");
+            double effectiveFraudScore = RiskRules.effectiveFraudScore(event);
             return AlertEvent.of(
                     "HIGH_RISK_TRANSACTION",
                     "CRITICAL",
                     event.getUserId(),
-                    "single event exceeded fraud rule threshold",
+                    "single event exceeded fraud rule threshold; merchantRiskTier="
+                            + riskTier
+                            + ", merchantRiskMultiplier="
+                            + String.format("%.3f", event.getMerchantRiskMultiplier())
+                            + ", effectiveFraudScore="
+                            + String.format("%.4f", effectiveFraudScore),
                     event.getEventTime(),
                     event.getEventTime(),
                     event.getEventTime(),
-                    event.getMlFraudScore(),
+                    effectiveFraudScore,
                     event.getEventId());
         }
     }
@@ -310,7 +357,7 @@ public class RealTimeAlertJob {
         void add(TransactionEvent event) {
             count++;
             totalAmount += event.getAmount();
-            totalFraudScore += event.getMlFraudScore();
+            totalFraudScore += RiskRules.effectiveFraudScore(event);
             if (sampleEventId == null) {
                 sampleEventId = event.getEventId();
             }
@@ -414,6 +461,44 @@ public class RealTimeAlertJob {
                 mapper = ObjectMapperFactory.create();
             }
             return lateEventDlq(event, rawTopic, replayTopic, mapper);
+        }
+    }
+
+    static class MerchantRiskProfileEnrichmentFunction
+            extends BroadcastProcessFunction<TransactionEvent, MerchantRiskProfile, TransactionEvent> {
+        private final MapStateDescriptor<String, MerchantRiskProfile> stateDescriptor;
+
+        MerchantRiskProfileEnrichmentFunction(MapStateDescriptor<String, MerchantRiskProfile> stateDescriptor) {
+            this.stateDescriptor = stateDescriptor;
+        }
+
+        @Override
+        public void processElement(
+                TransactionEvent event,
+                ReadOnlyContext context,
+                Collector<TransactionEvent> out) throws Exception {
+            ReadOnlyBroadcastState<String, MerchantRiskProfile> state =
+                    context.getBroadcastState(stateDescriptor);
+            MerchantRiskProfile profile = state.get(normalize(event.getMerchantId(), ""));
+            if (profile != null) {
+                event.setMerchantRiskTier(profile.getRiskTier());
+                event.setMerchantRiskMultiplier(profile.getRiskMultiplier());
+                event.setMerchantManualReviewRequired(profile.isManualReviewRequired());
+            }
+            out.collect(event);
+        }
+
+        @Override
+        public void processBroadcastElement(
+                MerchantRiskProfile profile,
+                Context context,
+                Collector<TransactionEvent> out) throws Exception {
+            BroadcastState<String, MerchantRiskProfile> state = context.getBroadcastState(stateDescriptor);
+            if (profile.isDeleted()) {
+                state.remove(profile.getMerchantId());
+            } else {
+                state.put(profile.getMerchantId(), profile);
+            }
         }
     }
 

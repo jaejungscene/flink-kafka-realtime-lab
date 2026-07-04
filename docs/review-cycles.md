@@ -172,19 +172,52 @@
 완성:
 
 - PostgreSQL, Debezium Kafka Connect, connector 등록 script, merchant risk profile seed data를 추가했습니다.
+- Flink job이 `merchant_risk_profiles` topic을 Broadcast State로 join하도록 보강했습니다.
 
 검토:
 
-- Fraud stream 본편을 복잡하게 만들지 않으면서 실무 reference data join 주제를 보여주는지 확인했습니다.
+- Fraud stream 본편의 실행 난도를 크게 올리지 않으면서 실무 reference data join 주제를 보여주는지 확인했습니다.
 
 수정 보완:
 
-- CDC topic을 본편 join에 바로 연결하지 않고 확장 과제로 문서화했습니다.
+- Reference topic을 compacted topic으로 두고, Flink source는 earliest부터 읽어 state 복구가 가능하게 했습니다.
+- Profile이 없는 가맹점은 multiplier `1.0`으로 처리해 기본 파이프라인이 깨지지 않게 했습니다.
+- 깨진 CDC payload는 `REFERENCE_DATA_PARSE_ERROR`로 DLQ에 보냅니다.
 
 테스트:
 
 - Connector JSON parse
 - Docker Compose profile render
+- Merchant profile parser test
+- Risk multiplier rule test
+
+## 추가 개선 Cycle: CDC Broadcast State Join 5회 점검
+
+1차 구현/검토:
+
+- `MerchantRiskProfile` 모델과 parser를 추가했습니다.
+- Debezium snake_case payload와 local camelCase payload를 모두 받을 수 있게 했습니다.
+
+2차 구현/검토:
+
+- `merchant_risk_profiles` Kafka source를 earliest offset으로 추가했습니다.
+- Broadcast State를 사용해 모든 parallel task가 동일한 reference data를 보도록 했습니다.
+
+3차 구현/검토:
+
+- `RiskRules.effectiveFraudScore`를 추가해 multiplier 계산 책임을 rule 계층에 모았습니다.
+- manual review 가맹점의 경계선 이벤트 승격 조건을 테스트로 고정했습니다.
+
+4차 구현/검토:
+
+- Docker Compose와 Kubernetes FlinkDeployment에 `--merchantRiskProfileTopic` 인자를 명시했습니다.
+- CDC guide, schema, test scenario, runbook을 현재 구현 기준으로 고쳤습니다.
+
+5차 구현/검토:
+
+- profile이 없을 때 기본 multiplier `1.0`으로 동작하는지 확인했습니다.
+- 깨진 profile payload가 DLQ로 가는지 parser 경로를 확인했습니다.
+- `make test`, Compose config, K8s overlay render로 최종 검증했습니다.
 
 ## 확장 5차 Cycle: Flink SQL과 문서 연결
 

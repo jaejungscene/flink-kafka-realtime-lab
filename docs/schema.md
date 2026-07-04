@@ -12,7 +12,7 @@
 | `transactions.aggregates.sql` | Flink SQL 집계 예제 결과 |
 | `alerts.fraud` | Flink 알람 판단 결과 |
 | `transactions.dlq` | 파싱/검증/late event 격리 |
-| `merchant_risk_profiles` | PostgreSQL CDC 기반 reference data |
+| `merchant_risk_profiles` | PostgreSQL CDC 기반 가맹점 risk profile |
 
 ## `transactions.raw`와 `transactions.replay`
 
@@ -63,7 +63,7 @@
   "alertType": "HIGH_RISK_TRANSACTION",
   "severity": "CRITICAL",
   "key": "user-001",
-  "reason": "single event exceeded fraud rule threshold",
+  "reason": "single event exceeded fraud rule threshold; merchantRiskTier=HIGH, merchantRiskMultiplier=1.700, effectiveFraudScore=0.9800",
   "windowStart": 1760000000000,
   "windowEnd": 1760000000000,
   "eventTime": 1760000000000,
@@ -104,6 +104,7 @@
 
 - `PARSE_OR_VALIDATION_ERROR`
 - `LATE_EVENT`
+- `REFERENCE_DATA_PARSE_ERROR`
 
 ## `merchant_risk_profiles`
 
@@ -119,7 +120,13 @@ CDC 선택 profile을 실행하면 PostgreSQL의 `merchant_risk_profiles` table 
 }
 ```
 
-이 topic은 Flink broadcast state join을 학습하기 위한 reference data 예제입니다.
+이 topic은 compacted topic입니다. Flink job은 earliest부터 읽어 Broadcast State를 구성하고, transaction의 `merchantId`와 join해 effective fraud score 계산에 사용합니다.
+
+적용 규칙:
+
+- profile 없음: multiplier `1.0`
+- profile 있음: `mlFraudScore * risk_multiplier`, 최대 `1.0`
+- `manual_review_required=true`: 경계선 이벤트를 알람으로 승격 가능
 
 ## Avro schema contract
 

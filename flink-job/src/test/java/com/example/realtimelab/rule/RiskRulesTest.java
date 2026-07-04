@@ -32,6 +32,26 @@ class RiskRulesTest {
     }
 
     @Test
+    void merchantRiskMultiplierAdjustsFraudScore() {
+        TransactionEvent event = baseEvent();
+        event.setMlFraudScore(0.62);
+        event.setMerchantRiskMultiplier(1.6);
+
+        assertTrue(RiskRules.isHighRisk(event));
+        assertTrue(RiskRules.effectiveFraudScore(event) <= 1.0);
+    }
+
+    @Test
+    void manualReviewMerchantCanEscalateBorderlinePayment() {
+        TransactionEvent event = baseEvent();
+        event.setAmount(750.0);
+        event.setMlFraudScore(0.76);
+        event.setMerchantManualReviewRequired(true);
+
+        assertTrue(RiskRules.isHighRisk(event));
+    }
+
+    @Test
     void burstTriggersOnCountOrAmount() {
         assertTrue(RiskRules.isBurst(5, 100.0));
         assertTrue(RiskRules.isBurst(1, 3_000.0));

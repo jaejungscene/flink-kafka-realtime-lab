@@ -87,6 +87,7 @@ curl "http://localhost:8000/topics/alerts.fraud/messages?limit=20"
 목적:
 
 - merchant key 기준의 실시간 이상 탐지를 확인합니다.
+- CDC reference data가 rule 판단에 반영되는 방식을 확인합니다.
 
 발생 조건:
 
@@ -104,11 +105,23 @@ curl "http://localhost:8000/topics/alerts.fraud/messages?limit=30"
 
 - `alertType`이 `MERCHANT_ANOMALY`인 메시지가 생성됩니다.
 - generator는 `merchant-hot` 패턴을 만들어 이 시나리오를 더 쉽게 관찰할 수 있게 합니다.
+- CDC를 켠 경우 `merchant-hot`의 `risk_multiplier`가 effective fraud score 계산에 반영됩니다.
 
 학습 포인트:
 
 - 같은 이벤트 stream에서도 key를 다르게 잡으면 다른 종류의 실시간 판단을 만들 수 있습니다.
 - user key와 merchant key는 서로 다른 운영 질문에 답합니다.
+- Broadcast State는 DB 기준정보를 stream 판단에 반영할 때 자주 쓰는 패턴입니다.
+
+CDC 기준정보 변경 실험:
+
+```bash
+make cdc-up
+make cdc-register
+make cdc-update-merchant
+make produce
+curl "http://localhost:8000/topics/alerts.fraud/messages?limit=20"
+```
 
 ## 시나리오 4: 국가/카테고리/가맹점 1분 집계
 
@@ -356,7 +369,7 @@ make lag
 
 목적:
 
-- DB 변경이 Kafka topic으로 전달되는 흐름을 확인합니다.
+- DB 변경이 Kafka topic으로 전달되고 Flink rule 판단에 반영되는 흐름을 확인합니다.
 
 실행:
 
@@ -365,12 +378,15 @@ make cdc-up
 make cdc-register
 make cdc-update-merchant
 make consume-merchant-profiles
+make produce
+curl "http://localhost:8000/topics/alerts.fraud/messages?limit=20"
 ```
 
 학습 포인트:
 
 - 실무 streaming rule은 event 자체뿐 아니라 DB의 reference data와 함께 판단되는 경우가 많습니다.
-- 다음 확장 과제는 `merchant_risk_profiles` topic을 Flink broadcast state로 join하는 것입니다.
+- `merchant_risk_profiles`는 compacted topic이고, Flink는 이를 Broadcast State로 유지해 `merchantId` 기준으로 join합니다.
+- profile 변경 이후 들어오는 이벤트부터 새 `risk_multiplier`와 `manual_review_required`가 반영됩니다.
 
 ## 시나리오 14: Flink SQL 집계 비교
 

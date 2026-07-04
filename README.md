@@ -41,7 +41,7 @@ flowchart LR
 - `COUNTRY_CATEGORY_1M`: 국가/카테고리/가맹점 기준 1분 실시간 집계
 - `transactions.dlq`: 파싱 실패, 검증 실패, late event 격리
 - `transactions.replay`: DLQ 보정 후 재처리 topic
-- `merchant_risk_profiles`: PostgreSQL CDC 기반 reference data topic
+- `merchant_risk_profiles`: PostgreSQL CDC 기반 가맹점 risk profile을 Flink Broadcast State로 join
 - Schema Registry: Avro schema contract와 evolution 학습
 - Observability: topic message count, DLQ, alert, consumer lag 관측
 - Failure recovery: TaskManager 장애, Kafka 재시작, savepoint 실습
@@ -131,8 +131,9 @@ Operator 사전 조건, image naming, 배포 순서는 [Kubernetes 가이드](do
 2. [schema.md](docs/schema.md)를 읽고 event contract를 이해합니다.
 3. `RiskRules`의 fraud threshold를 바꾸고 test를 실행합니다.
 4. raw, aggregate, alert, DLQ, replay topic을 비교합니다.
-5. [operations-runbook.md](docs/operations-runbook.md)를 읽고 각 점검 항목이 실제 운영에서 어떤 의미인지 연결합니다.
-6. Kubernetes overlay를 render해서 dev와 prod-like 설정 차이를 비교합니다.
+5. `make cdc-up`, `make cdc-register`, `make cdc-update-merchant`로 reference data 변경이 알람 판단에 반영되는지 확인합니다.
+6. [operations-runbook.md](docs/operations-runbook.md)를 읽고 각 점검 항목이 실제 운영에서 어떤 의미인지 연결합니다.
+7. Kubernetes overlay를 render해서 dev와 prod-like 설정 차이를 비교합니다.
 
 ## 저장소 구조
 

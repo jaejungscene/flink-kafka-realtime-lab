@@ -96,6 +96,7 @@ services:
           --bootstrapServers kafka:9092 \
           --rawTopic transactions.raw \
           --replayTopic transactions.replay \
+          --merchantRiskProfileTopic merchant_risk_profiles \
           --alertTopic alerts.fraud \
           --aggregateTopic transactions.aggregates \
           --dlqTopic transactions.dlq \

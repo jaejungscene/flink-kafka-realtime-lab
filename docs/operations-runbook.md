@@ -65,6 +65,7 @@ curl http://localhost:8083/connectors
 
 - Producer schema 변경 여부를 확인합니다.
 - `reason`과 `errorType`을 확인합니다.
+- `REFERENCE_DATA_PARSE_ERROR`는 CDC profile payload가 기대 형식과 다른 경우입니다.
 - `make replay-dlq`는 복구 가능한 record에만 사용합니다.
 - Replay record에는 `replayId`, `replayRunId`, `replaySourceTopic`, `replaySourcePartition`, `replaySourceOffset` metadata가 추가됩니다.
 
@@ -79,6 +80,8 @@ curl http://localhost:8083/connectors
 - `make cdc-up` 이후 Connect REST API가 준비될 때까지 잠시 기다립니다.
 - `curl http://localhost:8083/connectors`를 확인합니다.
 - PostgreSQL container가 실행 중인지 `docker compose ps postgres`로 확인합니다.
+- `merchant_risk_profiles` topic은 compacted topic이어야 합니다.
+- Flink job은 이 topic을 earliest부터 읽어 Broadcast State를 구성합니다.
 
 ### Grafana dashboard가 비어 있음
 
@@ -101,4 +104,4 @@ curl http://localhost:8083/connectors
 - Avro 또는 Protobuf 기반 Schema Registry를 추가합니다.
 - Replay 권한과 audit trail을 정의합니다.
 - Kafka lag, Flink checkpoint failure, backpressure, restart count, end-to-end latency를 모니터링합니다.
-- CDC reference data join은 broadcast state, TTL, schema evolution 정책까지 함께 설계합니다.
+- CDC reference data join은 profile 변경 시점, TTL, schema evolution 정책까지 함께 설계합니다.

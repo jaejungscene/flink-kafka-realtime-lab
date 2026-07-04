@@ -21,13 +21,16 @@ public final class RiskRules {
             return false;
         }
 
-        boolean modelSaysDanger = event.getMlFraudScore() >= HIGH_FRAUD_SCORE;
+        double effectiveFraudScore = effectiveFraudScore(event);
+        boolean modelSaysDanger = effectiveFraudScore >= HIGH_FRAUD_SCORE;
         boolean expensiveRiskyPayment = event.getAmount() >= HIGH_AMOUNT && event.getIpRisk() >= HIGH_IP_RISK;
         boolean suspiciousFailure = "FAILED".equalsIgnoreCase(event.getPaymentStatus())
-                && event.getMlFraudScore() >= 0.85
+                && effectiveFraudScore >= 0.85
                 && event.getIpRisk() >= 70;
+        boolean manualReviewRisk = event.isMerchantManualReviewRequired()
+                && (effectiveFraudScore >= 0.75 || event.getAmount() >= HIGH_AMOUNT * 0.7);
 
-        return modelSaysDanger || expensiveRiskyPayment || suspiciousFailure;
+        return modelSaysDanger || expensiveRiskyPayment || suspiciousFailure || manualReviewRisk;
     }
 
     public static boolean isBurst(long eventCount, double totalAmount) {
@@ -43,6 +46,14 @@ public final class RiskRules {
 
     public static boolean isReplayCandidate(String errorType) {
         return "PARSE_OR_VALIDATION_ERROR".equals(errorType) || "LATE_EVENT".equals(errorType);
+    }
+
+    public static double effectiveFraudScore(TransactionEvent event) {
+        if (event == null) {
+            return 0.0;
+        }
+        double multiplier = event.getMerchantRiskMultiplier();
+        return Math.min(1.0, event.getMlFraudScore() * multiplier);
     }
 
     private static double doubleSetting(String key, double fallback) {

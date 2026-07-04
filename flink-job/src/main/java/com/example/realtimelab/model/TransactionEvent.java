@@ -16,6 +16,9 @@ public class TransactionEvent implements Serializable {
     private double mlFraudScore;
     private String paymentStatus;
     private int ipRisk;
+    private String merchantRiskTier;
+    private double merchantRiskMultiplier = 1.0;
+    private boolean merchantManualReviewRequired;
 
     public TransactionEvent() {
     }
@@ -122,5 +125,29 @@ public class TransactionEvent implements Serializable {
 
     public void setIpRisk(int ipRisk) {
         this.ipRisk = ipRisk;
+    }
+
+    public String getMerchantRiskTier() {
+        return merchantRiskTier;
+    }
+
+    public void setMerchantRiskTier(String merchantRiskTier) {
+        this.merchantRiskTier = merchantRiskTier;
+    }
+
+    public double getMerchantRiskMultiplier() {
+        return merchantRiskMultiplier <= 0 ? 1.0 : merchantRiskMultiplier;
+    }
+
+    public void setMerchantRiskMultiplier(double merchantRiskMultiplier) {
+        this.merchantRiskMultiplier = merchantRiskMultiplier <= 0 ? 1.0 : merchantRiskMultiplier;
+    }
+
+    public boolean isMerchantManualReviewRequired() {
+        return merchantManualReviewRequired;
+    }
+
+    public void setMerchantManualReviewRequired(boolean merchantManualReviewRequired) {
+        this.merchantManualReviewRequired = merchantManualReviewRequired;
     }
 }

@@ -36,7 +36,7 @@ flowchart LR
 | Replayer | `replayer/` | Python | DLQ 이벤트를 보정해 replay topic으로 재발행 |
 | API | `api/` | FastAPI | Kafka topic 메시지 조회용 HTTP API |
 | Schema Registry | `schemas/`, `scripts/register_schemas.py` | Avro, Schema Registry | topic별 schema contract 등록 예제 |
-| CDC | `cdc/` | PostgreSQL, Debezium Connect | reference data 변경을 Kafka topic으로 발행 |
+| CDC | `cdc/` | PostgreSQL, Debezium Connect | 가맹점 risk profile 변경을 Kafka topic으로 발행 |
 | Observability | `observability/` | Prometheus, Grafana | topic count, lag, DLQ, alert 관측 starter |
 | Flink SQL | `flink-sql/` | SQL 예제 | DataStream API와 SQL 구현 비교 |
 | Docker Compose | `docker-compose.yml`, `Makefile` | Docker | 로컬 학습/검증 실행 환경 |
@@ -49,7 +49,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | `transactions.raw` | `generator` | Flink job | 원천 결제/ML fraud 이벤트 |
 | `transactions.replay` | `replayer` | Flink job | DLQ 보정 후 재처리 이벤트 |
-| `merchant_risk_profiles` | Debezium Connect | Flink 확장 과제, console consumer | 가맹점 위험 profile CDC 이벤트 |
+| `merchant_risk_profiles` | Debezium Connect | Flink job, console consumer | 가맹점 위험 profile CDC 이벤트 |
 | `alerts.fraud` | Flink job | API, console consumer | 단건/사용자/가맹점 알람 |
 | `transactions.aggregates` | Flink job | API, console consumer | 국가/카테고리/가맹점 1분 집계 |
 | `transactions.aggregates.sql` | Flink SQL 예제 | console consumer | SQL 기반 집계 결과 예시 |
@@ -67,11 +67,13 @@ Flink job의 핵심 파일은 `flink-job/src/main/java/com/example/realtimelab/j
 2. Kafka value를 문자열로 받은 뒤 `TransactionParser`에서 JSON parse와 validation을 수행합니다.
 3. parse/validation 실패는 side output으로 분리해 `transactions.dlq`로 보냅니다.
 4. 정상 이벤트에 `eventTime` watermark를 부여합니다.
-5. 고위험 단건 이벤트는 `HIGH_RISK_TRANSACTION` 알람으로 보냅니다.
-6. 사용자별 1분 window에서 burst 조건을 판단해 `USER_PAYMENT_BURST` 알람을 만듭니다.
-7. 국가/카테고리/가맹점 기준 1분 집계를 `transactions.aggregates`로 보냅니다.
-8. 가맹점별 1분 window에서 이상 징후를 판단해 `MERCHANT_ANOMALY` 알람을 만듭니다.
-9. 허용 지연 시간을 넘긴 late event는 DLQ성 이벤트로 `transactions.dlq`에 보냅니다.
+5. `merchant_risk_profiles` compacted topic을 earliest부터 읽고 Broadcast State로 유지합니다.
+6. transaction의 `merchantId`와 risk profile을 join해 fraud score multiplier와 manual review flag를 반영합니다.
+7. 고위험 단건 이벤트는 `HIGH_RISK_TRANSACTION` 알람으로 보냅니다.
+8. 사용자별 1분 window에서 burst 조건을 판단해 `USER_PAYMENT_BURST` 알람을 만듭니다.
+9. 국가/카테고리/가맹점 기준 1분 집계를 `transactions.aggregates`로 보냅니다.
+10. 가맹점별 1분 window에서 이상 징후를 판단해 `MERCHANT_ANOMALY` 알람을 만듭니다.
+11. 허용 지연 시간을 넘긴 late event는 DLQ성 이벤트로 `transactions.dlq`에 보냅니다.
 
 ## Rule 구성
 
@@ -85,6 +87,8 @@ Flink job의 핵심 파일은 `flink-job/src/main/java/com/example/realtimelab/j
 | `isReplayCandidate` | replay 가능한 DLQ 유형 구분 |
 
 이 구조 덕분에 Flink topology를 크게 바꾸지 않고도 rule test를 추가하거나 threshold를 조정할 수 있습니다.
+
+`merchant_risk_profiles` CDC topic은 Broadcast State로 join됩니다. profile이 없으면 기본 multiplier `1.0`으로 처리하고, profile이 있으면 `risk_multiplier`로 effective fraud score를 계산합니다.
 
 ## Docker Compose 구성
 
@@ -145,4 +149,4 @@ K8s manifests는 바로 운영 복붙용이라기보다, 실무자가 Strimzi/Fl
 - Event-time, watermark, allowed lateness를 통해 실시간성과 정확성의 tradeoff를 보여줍니다.
 - Rule을 분리해 테스트 가능한 알람 판단 구조를 만듭니다.
 - Docker Compose와 Kubernetes 배포를 모두 제공해 학습 환경과 팀 배포 환경의 차이를 비교할 수 있습니다.
-- Schema Registry, CDC, observability, chaos 실습을 선택 확장으로 제공해 협업/운영 관점까지 볼 수 있습니다.
+- Schema Registry, CDC reference join, observability, chaos 실습을 선택 확장으로 제공해 협업/운영 관점까지 볼 수 있습니다.

@@ -36,6 +36,8 @@ spec:
       - transactions.raw
       - --replayTopic
       - transactions.replay
+      - --merchantRiskProfileTopic
+      - merchant_risk_profiles
       - --alertTopic
       - alerts.fraud
       - --aggregateTopic
