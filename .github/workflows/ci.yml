@@ -52,7 +52,7 @@ jobs:
           PY
       - name: Validate shell scripts
         run: |
-          bash -n scripts/create-topics.sh scripts/chaos-kill-taskmanager.sh scripts/flink-savepoint.sh
+          bash -n scripts/create-topics.sh scripts/chaos-kill-taskmanager.sh scripts/flink-savepoint.sh scripts/smoke-test.sh scripts/ci-e2e-smoke.sh
           sh -n cdc/register-postgres-connector.sh
       - name: Validate Markdown fences
         run: |
@@ -67,3 +67,23 @@ jobs:
         run: kubectl kustomize k8s/overlays/dev >/tmp/realtime-lab-dev.yaml
       - name: Render Kubernetes prod-like overlay
         run: kubectl kustomize k8s/overlays/prod-like >/tmp/realtime-lab-prod-like.yaml
+
+  compose-e2e-smoke:
+    runs-on: ubuntu-latest
+    needs:
+      - flink-job-test
+      - docker-compose-config
+      - python-and-k8s-static
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show Docker versions
+        run: |
+          docker version
+          docker compose version
+      - name: Run Docker Compose E2E smoke test
+        env:
+          CI_GENERATOR_RUN_SECONDS: "80"
+          CI_GENERATOR_EVENTS_PER_SECOND: "40"
+          SMOKE_TOPIC_ATTEMPTS: "35"
+        run: make ci-smoke

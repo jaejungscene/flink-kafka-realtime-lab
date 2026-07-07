@@ -219,6 +219,35 @@
 - 깨진 profile payload가 DLQ로 가는지 parser 경로를 확인했습니다.
 - `make test`, Compose config, K8s overlay render로 최종 검증했습니다.
 
+## 추가 개선 Cycle: CI E2E Smoke Test 5회 점검
+
+1차 구현/검토:
+
+- 로컬 smoke script를 그대로 CI에 복사하지 않고 `scripts/ci-e2e-smoke.sh` wrapper를 추가했습니다.
+- 환경 시작, Flink job 대기, generator 실행, smoke 검증, cleanup을 한 흐름으로 묶었습니다.
+
+2차 구현/검토:
+
+- 실패 시 `docker compose ps`와 핵심 서비스 로그가 자동 출력되도록 했습니다.
+- CI 로그에서 원인을 빠르게 찾을 수 있게 GitHub Actions group 출력을 사용했습니다.
+
+3차 구현/검토:
+
+- GitHub Actions에 `compose-e2e-smoke` job을 추가했습니다.
+- 비용이 큰 E2E 검증은 단위 테스트와 정적 검증이 통과한 뒤 실행되도록 `needs`를 걸었습니다.
+
+4차 구현/검토:
+
+- 새 script를 shell syntax check 대상에 포함했습니다.
+- `SMOKE_TOPIC_ATTEMPTS`, `SMOKE_TOPIC_SLEEP_SECONDS` 등 재시도 값을 환경변수로 조정할 수 있게 했습니다.
+
+5차 구현/검토:
+
+- `COMPOSE_PROJECT_NAME=realtime-lab-ci`를 기본값으로 두어 로컬 개발 stack과 충돌을 줄였습니다.
+- 첫 E2E 실행에서 CDC Broadcast State join이 downstream watermark를 막아 aggregate가 나오지 않는 문제를 발견했습니다.
+- Flink topology를 enrich 후 watermark 부여 순서로 바꾸어 reference stream 유휴 상태가 window emit을 막지 않게 했습니다.
+- [CI E2E Smoke Test](ci-e2e-smoke.md)에 목적, 실행 방법, 실패 원인, 실무 확장 포인트를 한국어로 정리했습니다.
+
 ## 확장 5차 Cycle: Flink SQL과 문서 연결
 
 완성:

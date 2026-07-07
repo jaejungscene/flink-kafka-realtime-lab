@@ -55,7 +55,8 @@ flowchart LR
 - [Schema Registry 가이드](docs/schema-registry-guide.md): Avro schema contract와 evolution
 - [관측성 가이드](docs/observability-guide.md): Prometheus/Grafana와 운영 metric
 - [장애와 복구 실습](docs/failure-recovery-guide.md): TaskManager/Kafka 장애, 부하, savepoint
-- [CDC 가이드](docs/cdc-guide.md): PostgreSQL reference data를 Kafka topic으로 흘리는 예제
+- [CDC 가이드](docs/cdc-guide.md): PostgreSQL reference data를 Kafka topic으로 흘리고 Flink Broadcast State로 join하는 예제
+- [CI E2E Smoke Test](docs/ci-e2e-smoke.md): GitHub Actions에서 Docker Compose로 핵심 경로를 검증하는 방법
 - [Flink SQL 가이드](docs/flink-sql-guide.md): DataStream API와 SQL 접근 비교
 
 ## 빠른 시작: Docker Compose
@@ -67,6 +68,12 @@ make build
 make up
 make produce
 make smoke
+```
+
+CI와 같은 E2E 검증을 로컬에서 실행하려면:
+
+```bash
+make ci-smoke
 ```
 
 자주 쓰는 명령:
@@ -158,6 +165,7 @@ Operator 사전 조건, image naming, 배포 순서는 [Kubernetes 가이드](do
 ```bash
 make test
 docker compose config
+make ci-smoke
 python3 -m py_compile api/src/main.py generator/src/producer.py replayer/src/replay_dlq.py
 kubectl kustomize k8s/overlays/dev
 kubectl kustomize k8s/overlays/prod-like

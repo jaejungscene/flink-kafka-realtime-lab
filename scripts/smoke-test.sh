@@ -21,16 +21,18 @@ curl -fsS http://localhost:8000/health | sed 's/^/api: /'
 wait_for_topic_count() {
   local topic="$1"
   local min_count="$2"
-  local attempts="${3:-20}"
+  local attempts="${3:-${SMOKE_TOPIC_ATTEMPTS:-20}}"
+  local sleep_seconds="${SMOKE_TOPIC_SLEEP_SECONDS:-3}"
+  local api_timeout_seconds="${SMOKE_API_TIMEOUT_SECONDS:-2}"
   local response
 
   for _ in $(seq 1 "${attempts}"); do
-    response="$(curl -fsS "http://localhost:8000/topics/${topic}/messages?limit=20&timeout_seconds=2&from_beginning=true")"
+    response="$(curl -fsS "http://localhost:8000/topics/${topic}/messages?limit=20&timeout_seconds=${api_timeout_seconds}&from_beginning=true")"
     echo "${response}" | sed "s/^/${topic}: /"
     if echo "${response}" | python3 -c "import json,sys; data=json.load(sys.stdin); raise SystemExit(0 if data.get('count', 0) >= ${min_count} else 1)"; then
       return 0
     fi
-    sleep 3
+    sleep "${sleep_seconds}"
   done
 
   echo "topic ${topic} did not reach count >= ${min_count}" >&2

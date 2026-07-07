@@ -133,6 +133,14 @@ make replay-dlq
 make down
 ```
 
+CI와 동일한 E2E smoke test를 로컬에서 한 번에 실행하려면:
+
+```bash
+make ci-smoke
+```
+
+이 명령은 compose 환경을 초기화하고, 핵심 서비스를 시작하고, generator로 데이터를 만든 뒤 `alerts.fraud`, `transactions.aggregates`, `transactions.dlq`에 실제 메시지가 생성되는지 확인합니다.
+
 ## 3. 선택 확장 실행
 
 ### Schema Registry

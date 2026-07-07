@@ -2,7 +2,7 @@ PROJECT_NAME := flink-kraft-realtime-lab
 COMPOSE := docker compose
 KAFKA := docker compose exec kafka /opt/kafka/bin
 
-.PHONY: build up down restart logs topics lag produce produce-high-load replay-dlq consume-alerts consume-aggregates consume-dlq consume-replay consume-merchant-profiles schema-up schema-register cdc-up cdc-register cdc-update-merchant observe-up chaos-kill-taskmanager chaos-restart-kafka savepoint smoke test k8s-render-dev k8s-render-prod-like clean
+.PHONY: build up down restart logs topics lag produce produce-high-load replay-dlq consume-alerts consume-aggregates consume-dlq consume-replay consume-merchant-profiles schema-up schema-register cdc-up cdc-register cdc-update-merchant observe-up chaos-kill-taskmanager chaos-restart-kafka savepoint smoke ci-smoke test k8s-render-dev k8s-render-prod-like clean
 
 build:
 	$(COMPOSE) build
@@ -77,6 +77,9 @@ savepoint:
 
 smoke:
 	./scripts/smoke-test.sh
+
+ci-smoke:
+	./scripts/ci-e2e-smoke.sh
 
 test:
 	docker build --target test -t $(PROJECT_NAME)-flink-test ./flink-job

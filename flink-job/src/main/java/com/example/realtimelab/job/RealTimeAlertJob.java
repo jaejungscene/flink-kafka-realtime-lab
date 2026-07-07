@@ -94,18 +94,18 @@ public class RealTimeAlertJob {
         MapStateDescriptor<String, MerchantRiskProfile> merchantProfileState = merchantProfileStateDescriptor();
         BroadcastStream<MerchantRiskProfile> merchantProfileBroadcast = merchantProfiles.broadcast(merchantProfileState);
 
-        SingleOutputStreamOperator<TransactionEvent> watermarkedEvents = parsedEvents
+        SingleOutputStreamOperator<TransactionEvent> enrichedEvents = parsedEvents
+                .connect(merchantProfileBroadcast)
+                .process(new MerchantRiskProfileEnrichmentFunction(merchantProfileState))
+                .name("enrich-with-merchant-risk-profiles");
+
+        SingleOutputStreamOperator<TransactionEvent> events = enrichedEvents
                 .assignTimestampsAndWatermarks(
                         WatermarkStrategy
                                 .<TransactionEvent>forBoundedOutOfOrderness(watermarkDelay)
                                 .withTimestampAssigner((event, timestamp) -> event.getEventTime()))
                 .process(new LateEventRouter(allowedLateness, rawTopic, replayTopic))
                 .name("event-time-watermarks");
-
-        SingleOutputStreamOperator<TransactionEvent> events = watermarkedEvents
-                .connect(merchantProfileBroadcast)
-                .process(new MerchantRiskProfileEnrichmentFunction(merchantProfileState))
-                .name("enrich-with-merchant-risk-profiles");
 
         parsedEvents
                 .getSideOutput(DLQ_TAG)
