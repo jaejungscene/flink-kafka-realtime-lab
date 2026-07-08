@@ -67,6 +67,8 @@ jobs:
         run: kubectl kustomize k8s/overlays/dev >/tmp/realtime-lab-dev.yaml
       - name: Render Kubernetes prod-like overlay
         run: kubectl kustomize k8s/overlays/prod-like >/tmp/realtime-lab-prod-like.yaml
+      - name: Render Kubernetes exactly-once overlay
+        run: kubectl kustomize k8s/overlays/exactly-once >/tmp/realtime-lab-exactly-once.yaml
 
   compose-e2e-smoke:
     runs-on: ubuntu-latest

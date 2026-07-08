@@ -365,7 +365,45 @@ make lag
 - Checkpoint와 restart strategy는 장애 복구의 핵심입니다.
 - 단일 Kafka broker는 학습용으로 충분하지만 운영 고가용성 구성은 아닙니다.
 
-## 시나리오 13: CDC reference data
+## 시나리오 13: At-least-once와 Exactly-once 비교
+
+목적:
+
+- Kafka sink delivery guarantee와 Flink checkpointing mode의 차이를 확인합니다.
+
+기본 모드:
+
+```bash
+make down
+make up
+make produce
+make smoke
+```
+
+Exactly-once 모드:
+
+```bash
+make down
+make up-exactly-once
+make produce
+make smoke
+```
+
+CI형 검증:
+
+```bash
+make ci-smoke
+make ci-smoke-exactly-once
+```
+
+학습 포인트:
+
+- `AT_LEAST_ONCE`는 더 단순하고 빠르지만 장애 시 결과 topic에 중복 commit 가능성을 허용합니다.
+- `EXACTLY_ONCE`는 Kafka transaction과 checkpoint commit을 함께 사용합니다.
+- 결과 consumer가 transaction commit 결과만 보려면 `read_committed`가 필요합니다.
+- 외부 DB/API sink까지 자동으로 exactly-once가 되는 것은 아닙니다.
+
+## 시나리오 14: CDC reference data
 
 목적:
 
@@ -388,7 +426,7 @@ curl "http://localhost:8000/topics/alerts.fraud/messages?limit=20"
 - `merchant_risk_profiles`는 compacted topic이고, Flink는 이를 Broadcast State로 유지해 `merchantId` 기준으로 join합니다.
 - profile 변경 이후 들어오는 이벤트부터 새 `risk_multiplier`와 `manual_review_required`가 반영됩니다.
 
-## 시나리오 14: Flink SQL 집계 비교
+## 시나리오 15: Flink SQL 집계 비교
 
 목적:
 

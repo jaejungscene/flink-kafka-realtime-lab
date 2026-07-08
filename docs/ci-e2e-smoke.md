@@ -26,6 +26,12 @@
 make ci-smoke
 ```
 
+Exactly-once 모드도 같은 흐름으로 검증할 수 있습니다.
+
+```bash
+make ci-smoke-exactly-once
+```
+
 기본값:
 
 | 환경변수 | 기본값 | 의미 |

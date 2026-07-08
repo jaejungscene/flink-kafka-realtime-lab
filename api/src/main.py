@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException, Response
 
 
 BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092")
+KAFKA_ISOLATION_LEVEL = os.getenv("KAFKA_ISOLATION_LEVEL", "read_uncommitted")
 METRIC_TOPICS = [
     topic.strip()
     for topic in os.getenv(
@@ -44,6 +45,7 @@ def metrics() -> Response:
             "bootstrap.servers": BOOTSTRAP_SERVERS,
             "group.id": FLINK_CONSUMER_GROUP,
             "enable.auto.commit": False,
+            "isolation.level": KAFKA_ISOLATION_LEVEL,
         }
     )
     lines = [
@@ -119,6 +121,7 @@ def read_messages(
             "group.id": f"realtime-lab-api-{uuid.uuid4()}",
             "enable.auto.commit": False,
             "auto.offset.reset": "earliest",
+            "isolation.level": KAFKA_ISOLATION_LEVEL,
         }
     )
 

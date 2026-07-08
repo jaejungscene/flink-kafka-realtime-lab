@@ -141,6 +141,23 @@ make ci-smoke
 
 이 명령은 compose 환경을 초기화하고, 핵심 서비스를 시작하고, generator로 데이터를 만든 뒤 `alerts.fraud`, `transactions.aggregates`, `transactions.dlq`에 실제 메시지가 생성되는지 확인합니다.
 
+Exactly-once 모드까지 함께 비교하려면:
+
+```bash
+make ci-smoke-exactly-once
+```
+
+일반 실행에서 exactly-once 모드를 켜려면:
+
+```bash
+make down
+make up-exactly-once
+make produce
+make smoke
+```
+
+자세한 설명은 [Delivery Guarantee 실습](delivery-guarantee-guide.md)을 참고합니다.
+
 ## 3. 선택 확장 실행
 
 ### Schema Registry
@@ -218,6 +235,7 @@ docker build -t realtime-lab-generator:1.0.0 ./generator
 ```bash
 kubectl kustomize k8s/overlays/dev
 kubectl kustomize k8s/overlays/prod-like
+kubectl kustomize k8s/overlays/exactly-once
 ```
 
 파일로 저장해 검토하려면:
@@ -225,6 +243,7 @@ kubectl kustomize k8s/overlays/prod-like
 ```bash
 kubectl kustomize k8s/overlays/dev > /tmp/realtime-lab-dev.yaml
 kubectl kustomize k8s/overlays/prod-like > /tmp/realtime-lab-prod-like.yaml
+kubectl kustomize k8s/overlays/exactly-once > /tmp/realtime-lab-exactly-once.yaml
 ```
 
 ### 2단계: Overlay 선택

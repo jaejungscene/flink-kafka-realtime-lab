@@ -2,13 +2,16 @@ PROJECT_NAME := flink-kraft-realtime-lab
 COMPOSE := docker compose
 KAFKA := docker compose exec kafka /opt/kafka/bin
 
-.PHONY: build up down restart logs topics lag produce produce-high-load replay-dlq consume-alerts consume-aggregates consume-dlq consume-replay consume-merchant-profiles schema-up schema-register cdc-up cdc-register cdc-update-merchant observe-up chaos-kill-taskmanager chaos-restart-kafka savepoint smoke ci-smoke test k8s-render-dev k8s-render-prod-like clean
+.PHONY: build up up-exactly-once down restart logs topics lag produce produce-high-load replay-dlq consume-alerts consume-aggregates consume-dlq consume-replay consume-merchant-profiles schema-up schema-register cdc-up cdc-register cdc-update-merchant observe-up chaos-kill-taskmanager chaos-restart-kafka savepoint smoke ci-smoke ci-smoke-exactly-once test k8s-render-dev k8s-render-prod-like k8s-render-exactly-once clean
 
 build:
 	$(COMPOSE) build
 
 up:
 	$(COMPOSE) up -d kafka topic-init flink-jobmanager flink-taskmanager flink-submit kafka-ui api
+
+up-exactly-once:
+	FLINK_CHECKPOINTING_MODE=EXACTLY_ONCE SINK_DELIVERY_GUARANTEE=EXACTLY_ONCE KAFKA_ISOLATION_LEVEL=read_committed $(COMPOSE) up -d kafka topic-init flink-jobmanager flink-taskmanager flink-submit kafka-ui api
 
 down:
 	$(COMPOSE) down -v
@@ -81,6 +84,9 @@ smoke:
 ci-smoke:
 	./scripts/ci-e2e-smoke.sh
 
+ci-smoke-exactly-once:
+	FLINK_CHECKPOINTING_MODE=EXACTLY_ONCE SINK_DELIVERY_GUARANTEE=EXACTLY_ONCE KAFKA_ISOLATION_LEVEL=read_committed ./scripts/ci-e2e-smoke.sh
+
 test:
 	docker build --target test -t $(PROJECT_NAME)-flink-test ./flink-job
 
@@ -89,6 +95,9 @@ k8s-render-dev:
 
 k8s-render-prod-like:
 	kubectl kustomize k8s/overlays/prod-like
+
+k8s-render-exactly-once:
+	kubectl kustomize k8s/overlays/exactly-once
 
 clean:
 	$(COMPOSE) down -v --remove-orphans

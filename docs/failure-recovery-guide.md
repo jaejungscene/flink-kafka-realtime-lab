@@ -66,3 +66,25 @@ Savepoint는 job upgrade, rule 변경, 버전 배포 전에 상태를 안전하�
 ```bash
 SAVEPOINT_DIR=/tmp/my-savepoints make savepoint
 ```
+
+## Delivery guarantee 비교
+
+기본 모드는 `AT_LEAST_ONCE`입니다.
+
+```bash
+make down
+make up
+make produce
+make smoke
+```
+
+Exactly-once 실습 모드는 Kafka transaction과 Flink checkpoint를 함께 사용합니다.
+
+```bash
+make down
+make up-exactly-once
+make produce
+make smoke
+```
+
+실무에서는 exactly-once를 켜는 것만으로 충분하지 않습니다. 결과를 읽는 consumer의 `read_committed`, Kafka transaction 설정, 외부 sink의 idempotency를 함께 설계해야 합니다.

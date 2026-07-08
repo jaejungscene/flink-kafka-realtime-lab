@@ -248,6 +248,35 @@
 - Flink topology를 enrich 후 watermark 부여 순서로 바꾸어 reference stream 유휴 상태가 window emit을 막지 않게 했습니다.
 - [CI E2E Smoke Test](ci-e2e-smoke.md)에 목적, 실행 방법, 실패 원인, 실무 확장 포인트를 한국어로 정리했습니다.
 
+## 추가 개선 Cycle: Delivery Guarantee 분리 5회 점검
+
+1차 구현/검토:
+
+- Flink Kafka sink의 delivery guarantee를 `--sinkDeliveryGuarantee` 인자로 분리했습니다.
+- `EXACTLY_ONCE`일 때 topic별 transactional id prefix를 설정했습니다.
+
+2차 구현/검토:
+
+- 실습 목적이 흐려지지 않도록 허용 값은 `AT_LEAST_ONCE`, `EXACTLY_ONCE`로 제한했습니다.
+- 잘못된 값은 job 시작 시 명확한 에러로 실패하게 했습니다.
+
+3차 구현/검토:
+
+- Docker Compose 기본값은 `AT_LEAST_ONCE`로 유지했습니다.
+- `make up-exactly-once`, `make ci-smoke-exactly-once`를 추가해 선택 실습 경로를 분리했습니다.
+
+4차 구현/검토:
+
+- API consumer가 `KAFKA_ISOLATION_LEVEL`을 받도록 했습니다.
+- Exactly-once 실행에서는 `read_committed`로 결과 topic을 읽게 했습니다.
+
+5차 구현/검토:
+
+- Kubernetes `exactly-once` overlay를 추가했습니다.
+- 첫 exactly-once smoke에서 broker `transaction.max.timeout.ms`가 Flink Kafka sink transaction timeout보다 작아 job이 실패하는 문제를 발견했습니다.
+- Docker Compose와 Strimzi Kafka 설정에 `transaction.max.timeout.ms=3600000`을 명시했습니다.
+- [Delivery Guarantee 실습](delivery-guarantee-guide.md)에 보장 범위, 실행 방법, 실무 주의점을 한국어로 정리했습니다.
+
 ## 확장 5차 Cycle: Flink SQL과 문서 연결
 
 완성:

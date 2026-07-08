@@ -58,6 +58,8 @@ public class RealTimeAlertJob {
         String aggregateTopic = params.getOrDefault("aggregateTopic", "transactions.aggregates");
         String dlqTopic = params.getOrDefault("dlqTopic", "transactions.dlq");
         String consumerGroup = params.getOrDefault("consumerGroup", "flink-realtime-lab");
+        DeliveryGuarantee sinkDeliveryGuarantee =
+                deliveryGuaranteeParam(params.getOrDefault("sinkDeliveryGuarantee", "AT_LEAST_ONCE"));
         long checkpointIntervalMillis = longParam(params, "checkpointIntervalMillis", 10_000L);
         Duration watermarkDelay = Duration.ofSeconds(longParam(params, "watermarkDelaySeconds", 10L));
         Duration allowedLateness = Duration.ofSeconds(longParam(params, "allowedLatenessSeconds", 30L));
@@ -109,18 +111,18 @@ public class RealTimeAlertJob {
 
         parsedEvents
                 .getSideOutput(DLQ_TAG)
-                .sinkTo(kafkaSink(bootstrapServers, dlqTopic, dlqKey()))
+                .sinkTo(kafkaSink(bootstrapServers, dlqTopic, dlqKey(), sinkDeliveryGuarantee, "parse-dlq"))
                 .name("sink-dlq");
 
         merchantProfiles
                 .getSideOutput(DLQ_TAG)
-                .sinkTo(kafkaSink(bootstrapServers, dlqTopic, dlqKey()))
+                .sinkTo(kafkaSink(bootstrapServers, dlqTopic, dlqKey(), sinkDeliveryGuarantee, "reference-data-dlq"))
                 .name("sink-reference-data-dlq");
 
         events
                 .filter(new HighRiskFilter())
                 .map(new HighRiskAlertMapper())
-                .sinkTo(kafkaSink(bootstrapServers, alertTopic, AlertEvent::getKey))
+                .sinkTo(kafkaSink(bootstrapServers, alertTopic, AlertEvent::getKey, sinkDeliveryGuarantee, "high-risk-alerts"))
                 .name("sink-high-risk-alerts");
 
         SingleOutputStreamOperator<AlertEvent> userWindowAlerts = events
@@ -132,7 +134,7 @@ public class RealTimeAlertJob {
                 .name("user-window-alerts");
 
         userWindowAlerts
-                .sinkTo(kafkaSink(bootstrapServers, alertTopic, AlertEvent::getKey))
+                .sinkTo(kafkaSink(bootstrapServers, alertTopic, AlertEvent::getKey, sinkDeliveryGuarantee, "user-window-alerts"))
                 .name("sink-user-window-alerts");
 
         SingleOutputStreamOperator<AggregateEvent> aggregates = events
@@ -144,7 +146,7 @@ public class RealTimeAlertJob {
                 .name("country-category-merchant-aggregates");
 
         aggregates
-                .sinkTo(kafkaSink(bootstrapServers, aggregateTopic, AggregateEvent::getKey))
+                .sinkTo(kafkaSink(bootstrapServers, aggregateTopic, AggregateEvent::getKey, sinkDeliveryGuarantee, "transaction-aggregates"))
                 .name("sink-transaction-aggregates");
 
         SingleOutputStreamOperator<AlertEvent> merchantAnomalyAlerts = events
@@ -156,7 +158,7 @@ public class RealTimeAlertJob {
                 .name("merchant-anomaly-alerts");
 
         merchantAnomalyAlerts
-                .sinkTo(kafkaSink(bootstrapServers, alertTopic, AlertEvent::getKey))
+                .sinkTo(kafkaSink(bootstrapServers, alertTopic, AlertEvent::getKey, sinkDeliveryGuarantee, "merchant-anomaly-alerts"))
                 .name("sink-merchant-anomaly-alerts");
 
         DataStream<DlqEvent> windowLateEvents = userWindowAlerts
@@ -167,7 +169,7 @@ public class RealTimeAlertJob {
         events
                 .getSideOutput(DLQ_TAG)
                 .union(windowLateEvents)
-                .sinkTo(kafkaSink(bootstrapServers, dlqTopic, dlqKey()))
+                .sinkTo(kafkaSink(bootstrapServers, dlqTopic, dlqKey(), sinkDeliveryGuarantee, "late-events-dlq"))
                 .name("sink-late-events-dlq");
 
         env.execute("flink-kraft-realtime-lab");
@@ -191,16 +193,28 @@ public class RealTimeAlertJob {
                 MerchantRiskProfile.class);
     }
 
-    private static <T> KafkaSink<T> kafkaSink(String bootstrapServers, String topic, KeyExtractor<T> keyExtractor) {
-        return KafkaSink.<T>builder()
+    private static <T> KafkaSink<T> kafkaSink(
+            String bootstrapServers,
+            String topic,
+            KeyExtractor<T> keyExtractor,
+            DeliveryGuarantee deliveryGuarantee,
+            String transactionalScope) {
+        var builder = KafkaSink.<T>builder()
                 .setBootstrapServers(bootstrapServers)
-                .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+                .setDeliveryGuarantee(deliveryGuarantee)
                 .setRecordSerializer(KafkaRecordSerializationSchema.<T>builder()
                         .setTopic(topic)
                         .setKeySerializationSchema(new StringKeySerializationSchema<>(keyExtractor))
                         .setValueSerializationSchema(new JsonSerializationSchema<>())
-                        .build())
-                .build();
+                        .build());
+        if (DeliveryGuarantee.EXACTLY_ONCE.equals(deliveryGuarantee)) {
+            builder.setTransactionalIdPrefix("realtime-lab-" + sanitizeTransactionalId(topic + "-" + transactionalScope));
+        }
+        return builder.build();
+    }
+
+    private static String sanitizeTransactionalId(String value) {
+        return value.replaceAll("[^A-Za-z0-9-]", "-");
     }
 
     private static KeyExtractor<DlqEvent> dlqKey() {
@@ -230,6 +244,21 @@ public class RealTimeAlertJob {
             return fallback;
         }
         return Long.parseLong(value);
+    }
+
+    static DeliveryGuarantee deliveryGuaranteeParam(String value) {
+        try {
+            DeliveryGuarantee deliveryGuarantee = DeliveryGuarantee.valueOf(value.trim().toUpperCase());
+            if (!DeliveryGuarantee.AT_LEAST_ONCE.equals(deliveryGuarantee)
+                    && !DeliveryGuarantee.EXACTLY_ONCE.equals(deliveryGuarantee)) {
+                throw new IllegalArgumentException();
+            }
+            return deliveryGuarantee;
+        } catch (RuntimeException e) {
+            throw new IllegalArgumentException(
+                    "sinkDeliveryGuarantee must be one of AT_LEAST_ONCE or EXACTLY_ONCE: " + value,
+                    e);
+        }
     }
 
     @FunctionalInterface

@@ -61,6 +61,12 @@ curl http://localhost:8083/connectors
 - Flink parallelism을 늘리기 전에 Kafka partition 수를 먼저 확인합니다.
 - Flink UI에서 backpressure와 checkpoint failure를 확인합니다.
 
+### Exactly-once 모드에서 결과가 늦게 보임
+
+- `EXACTLY_ONCE` sink는 checkpoint commit 이후 결과가 안정적으로 보입니다.
+- 결과를 읽는 consumer는 `isolation.level=read_committed`를 사용해야 transaction commit 결과만 봅니다.
+- checkpoint failure, Kafka `transaction.max.timeout.ms`, transaction state log 설정을 함께 확인합니다.
+
 ### DLQ record 증가
 
 - Producer schema 변경 여부를 확인합니다.

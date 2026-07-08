@@ -4,31 +4,9 @@ metadata:
   name: realtime-lab-flink
   namespace: realtime-lab
 spec:
-  image: realtime-lab-flink-job:2.1.2
-  flinkVersion: v2_1
   flinkConfiguration:
-    taskmanager.numberOfTaskSlots: "4"
-    state.backend.type: hashmap
-    execution.checkpointing.interval: "10000"
-    execution.checkpointing.mode: AT_LEAST_ONCE
-    restart-strategy.type: fixed-delay
-    restart-strategy.fixed-delay.attempts: "3"
-    restart-strategy.fixed-delay.delay: 10 s
-  serviceAccount: flink
-  jobManager:
-    resource:
-      memory: "1024m"
-      cpu: 0.5
-  taskManager:
-    replicas: 1
-    resource:
-      memory: "2048m"
-      cpu: 1
+    execution.checkpointing.mode: EXACTLY_ONCE
   job:
-    jarURI: local:///opt/flink/usrlib/realtime-lab-flink-job.jar
-    entryClass: com.example.realtimelab.job.RealTimeAlertJob
-    parallelism: 2
-    upgradeMode: stateless
     args:
       - --bootstrapServers
       - realtime-lab-kafka-kafka-bootstrap:9092
@@ -47,7 +25,7 @@ spec:
       - --consumerGroup
       - flink-realtime-lab
       - --sinkDeliveryGuarantee
-      - AT_LEAST_ONCE
+      - EXACTLY_ONCE
       - --checkpointIntervalMillis
       - "10000"
       - --watermarkDelaySeconds
