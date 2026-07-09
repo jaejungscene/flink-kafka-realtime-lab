@@ -1,10 +1,10 @@
 # Flink Kafka(KRaft) 실시간 스트리밍 랩
 
-Kafka KRaft와 Apache Flink로 실시간 집계, 알람 판단, DLQ, replay, late event 처리를 학습하고 실무 설계에 참고할 수 있는 스트리밍 랩입니다.
+Kafka KRaft와 Apache Flink로 실시간 집계, 알람 판단, DLQ, replay, late event 처리를 학습하고 실무 설계에 참고할 수 있도록 만든 레포입니다.
 
 이 프로젝트는 ML fraud score가 포함된 결제 이벤트를 Kafka로 수집하고, Flink가 event-time 기준으로 사용자/가맹점/국가별 실시간 판단을 수행한 뒤 Kafka topic으로 결과를 발행합니다.
 
-기본 실행은 가볍게 유지하고, Schema Registry, CDC, Grafana 관측성, 장애 복구 실습, Flink SQL 예제는 선택 profile과 별도 문서로 제공합니다.
+기본 실행은 가볍게 유지하고, Schema Registry, CDC, Grafana 관측성, 장애 복구 실습, Flink SQL 예제는 선택 profile과 별도 문서로 만들었습니다.
 
 ## 버전 기준
 
