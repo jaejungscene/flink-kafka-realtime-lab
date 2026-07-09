@@ -58,6 +58,7 @@ flowchart LR
 - [CDC 가이드](docs/cdc-guide.md): PostgreSQL reference data를 Kafka topic으로 흘리고 Flink Broadcast State로 join하는 예제
 - [CI E2E Smoke Test](docs/ci-e2e-smoke.md): GitHub Actions에서 Docker Compose로 핵심 경로를 검증하는 방법
 - [Delivery Guarantee 실습](docs/delivery-guarantee-guide.md): At-least-once와 Exactly-once 실행 차이
+- [DLQ Summary/Replay API 실습](docs/dlq-replay-api-guide.md): DLQ 원인 요약, replay 미리보기, API 기반 재처리
 - [Flink SQL 가이드](docs/flink-sql-guide.md): DataStream API와 SQL 접근 비교
 
 ## 빠른 시작: Docker Compose
@@ -93,6 +94,9 @@ make lag
 make consume-alerts
 make consume-aggregates
 make consume-dlq
+make dlq-summary
+make dlq-replay-preview
+make dlq-replay-api
 make replay-dlq
 make consume-replay
 make observe-up
@@ -176,7 +180,8 @@ make test
 docker compose config
 make ci-smoke
 make ci-smoke-exactly-once
-python3 -m py_compile api/src/main.py generator/src/producer.py replayer/src/replay_dlq.py
+python3 -m py_compile api/src/main.py api/src/dlq_tools.py generator/src/producer.py replayer/src/replay_dlq.py
+PYTHONPATH=api python3 -m unittest discover -s api/tests
 kubectl kustomize k8s/overlays/dev
 kubectl kustomize k8s/overlays/prod-like
 kubectl kustomize k8s/overlays/exactly-once

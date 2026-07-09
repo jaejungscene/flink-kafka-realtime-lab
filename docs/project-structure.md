@@ -13,7 +13,7 @@
 ```mermaid
 flowchart LR
     Generator["generator<br/>테스트 이벤트 producer"] -->|transactions.raw| Kafka["Kafka KRaft"]
-    Replayer["replayer<br/>DLQ 보정 helper"] -->|transactions.replay| Kafka
+    Replayer["replayer/API<br/>DLQ 보정 helper"] -->|transactions.replay| Kafka
     Kafka --> Flink["Flink 2.1 DataStream job"]
     Flink -->|alerts.fraud| Kafka
     Flink -->|transactions.aggregates| Kafka
@@ -33,8 +33,8 @@ flowchart LR
 | Kafka KRaft | `docker-compose.yml`, `k8s/base/kafka*.yaml` | Kafka 4.1.2 | 원천 이벤트, 알람, 집계, DLQ, replay topic 저장 |
 | Flink Job | `flink-job/` | Flink 2.1.2, Java 17 | event-time 처리, window 집계, 알람 판단, DLQ 분기 |
 | Generator | `generator/` | Python | 실험용 결제 이벤트 생성 |
-| Replayer | `replayer/` | Python | DLQ 이벤트를 보정해 replay topic으로 재발행 |
-| API | `api/` | FastAPI | Kafka topic 메시지 조회용 HTTP API |
+| Replayer | `replayer/` | Python | DLQ 이벤트를 보정해 replay topic으로 재발행하는 CLI tool |
+| API | `api/` | FastAPI | Kafka topic 조회, DLQ summary, replay preview/API 실행 |
 | Schema Registry | `schemas/`, `scripts/register_schemas.py` | Avro, Schema Registry | topic별 schema contract 등록 예제 |
 | CDC | `cdc/` | PostgreSQL, Debezium Connect | 가맹점 risk profile 변경을 Kafka topic으로 발행 |
 | Observability | `observability/` | Prometheus, Grafana | topic count, lag, DLQ, alert 관측 starter |
@@ -128,7 +128,7 @@ K8s manifests는 바로 운영 복붙용이라기보다, 실무자가 Strimzi/Fl
 
 ```text
 .
-├── api/             # Kafka topic 조회용 FastAPI 서비스
+├── api/             # Kafka topic 조회와 DLQ summary/replay API
 ├── cdc/             # PostgreSQL CDC와 Debezium connector 예제
 ├── docs/            # 프로젝트 구조, 실행, 시나리오, 운영/학습 문서
 ├── flink-job/       # Java Flink DataStream job과 unit test
@@ -146,6 +146,7 @@ K8s manifests는 바로 운영 복붙용이라기보다, 실무자가 Strimzi/Fl
 ## 실무 관점에서 볼 포인트
 
 - Raw topic과 replay topic을 분리해 lineage를 보존합니다.
+- DLQ summary와 replay API를 분리해 원인 파악, 미리보기, 실행 흐름을 보여줍니다.
 - JSON parse를 Kafka source가 아니라 Flink 내부에서 수행해 DLQ 처리를 명시합니다.
 - Event-time, watermark, allowed lateness를 통해 실시간성과 정확성의 tradeoff를 보여줍니다.
 - `AT_LEAST_ONCE`와 `EXACTLY_ONCE` 실행 경로를 분리해 checkpoint와 Kafka transaction의 차이를 비교할 수 있습니다.

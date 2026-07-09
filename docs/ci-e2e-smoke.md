@@ -17,6 +17,9 @@
 - `alerts.fraud` 메시지 생성 확인
 - `transactions.aggregates` 메시지 생성 확인
 - `transactions.dlq` 메시지 생성 확인
+- DLQ summary API 응답 확인
+- DLQ replay preview API 응답 확인
+- DLQ replay API 실행 후 `transactions.replay` 메시지 생성 확인
 
 ## 실행
 

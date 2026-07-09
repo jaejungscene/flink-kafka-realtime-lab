@@ -219,27 +219,38 @@ curl "http://localhost:8000/topics/transactions.dlq/messages?limit=20"
 - late event를 무조건 버릴지, 별도 topic으로 보낼지, 보정 후 replay할지는 도메인 결정입니다.
 - 정확성과 지연 시간은 tradeoff입니다.
 
-## 시나리오 7: DLQ Replay
+## 시나리오 7: DLQ Summary/Replay API
 
 목적:
 
-- DLQ 보정 후 재처리 흐름을 확인합니다.
+- DLQ 원인을 요약하고, replay 대상을 미리 본 뒤, 보정 가능한 record만 재처리하는 흐름을 확인합니다.
 
 실행:
 
 ```bash
-make replay-dlq
+make dlq-summary
+make dlq-replay-preview
+make dlq-replay-api
 make consume-replay
 ```
 
 또는:
 
 ```bash
+curl "http://localhost:8000/dlq/summary?limit=100"
+curl -X POST "http://localhost:8000/dlq/replay" \
+  -H "content-type: application/json" \
+  -d '{"max_messages":5,"scan_limit":100,"dry_run":true}'
+curl -X POST "http://localhost:8000/dlq/replay" \
+  -H "content-type: application/json" \
+  -d '{"max_messages":5,"scan_limit":100,"dry_run":false}'
 curl "http://localhost:8000/topics/transactions.replay/messages?limit=10"
 ```
 
 기대 결과:
 
+- `dlq-summary`에서 error type과 reason별 건수를 볼 수 있습니다.
+- `dlq-replay-preview`는 Kafka에 발행하지 않고 대상 offset만 보여줍니다.
 - 보정 가능한 DLQ record가 `transactions.replay`로 발행됩니다.
 - Flink job은 raw topic과 replay topic을 모두 읽기 때문에 replay record도 다시 처리 대상이 됩니다.
 

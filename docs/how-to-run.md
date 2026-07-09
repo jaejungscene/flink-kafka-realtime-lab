@@ -104,16 +104,35 @@ curl "http://localhost:8000/topics/transactions.aggregates/messages?limit=5"
 curl "http://localhost:8000/topics/transactions.dlq/messages?limit=5"
 ```
 
-### 5단계: DLQ Replay
+### 5단계: DLQ Summary/Replay API
+
+DLQ를 바로 재처리하지 말고 먼저 요약과 미리보기를 확인합니다.
+
+```bash
+make dlq-summary
+make dlq-replay-preview
+make dlq-replay-api
+make consume-replay
+```
+
+기대 결과:
+
+- `dlq-summary`에서 error type, reason, replay 가능 수를 확인합니다.
+- `dlq-replay-preview`는 Kafka에 발행하지 않고 replay 대상만 보여줍니다.
+- `dlq-replay-api`는 보정 가능한 record를 `transactions.replay`로 발행합니다.
+
+자세한 설명은 [DLQ Summary/Replay API 실습](dlq-replay-api-guide.md)을 참고합니다.
+
+### 6단계: CLI DLQ Replay
 
 ```bash
 make replay-dlq
 make consume-replay
 ```
 
-`replayer`는 `transactions.dlq`에서 보정 가능한 record를 읽어 `transactions.replay`로 보냅니다. Flink job은 raw topic과 replay topic을 모두 소비합니다.
+`replayer`는 API가 아니라 별도 tool container로 실행되는 replay 예시입니다. 운영 배치나 수동 remediation job을 분리하고 싶을 때 참고합니다.
 
-### 6단계: 종료
+### 7단계: 종료
 
 ```bash
 make down
@@ -129,6 +148,8 @@ make build
 make up
 make produce
 make smoke
+make dlq-summary
+make dlq-replay-preview
 make replay-dlq
 make down
 ```

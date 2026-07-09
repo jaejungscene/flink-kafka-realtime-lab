@@ -48,4 +48,59 @@ wait_for_topic_count "transactions.aggregates" 1
 echo "checking DLQ topic through API"
 wait_for_topic_count "transactions.dlq" 1
 
+echo "checking DLQ summary API"
+curl -fsS "http://localhost:8000/dlq/summary?limit=100&timeout_seconds=3&from_beginning=true" \
+  | tee /tmp/realtime-lab-dlq-summary.json \
+  | sed 's/^/dlq-summary: /'
+python3 - <<'PY'
+import json
+
+with open("/tmp/realtime-lab-dlq-summary.json", encoding="utf-8") as fp:
+    data = json.load(fp)
+
+if data.get("scanned", 0) < 1:
+    raise SystemExit("DLQ summary did not scan any records")
+if not data.get("byErrorType"):
+    raise SystemExit("DLQ summary did not include error type breakdown")
+PY
+
+echo "checking DLQ replay preview API"
+curl -fsS -X POST "http://localhost:8000/dlq/replay" \
+  -H "content-type: application/json" \
+  -d '{"max_messages":1,"scan_limit":200,"timeout_seconds":5,"dry_run":true}' \
+  | tee /tmp/realtime-lab-dlq-replay-preview.json \
+  | sed 's/^/dlq-replay-preview: /'
+python3 - <<'PY'
+import json
+
+with open("/tmp/realtime-lab-dlq-replay-preview.json", encoding="utf-8") as fp:
+    data = json.load(fp)
+
+if data.get("dryRun") is not True:
+    raise SystemExit("DLQ replay preview must use dryRun=true")
+if data.get("scanned", 0) < 1:
+    raise SystemExit("DLQ replay preview did not scan any records")
+PY
+
+echo "checking DLQ replay API"
+curl -fsS -X POST "http://localhost:8000/dlq/replay" \
+  -H "content-type: application/json" \
+  -d '{"max_messages":1,"scan_limit":200,"timeout_seconds":5,"dry_run":false}' \
+  | tee /tmp/realtime-lab-dlq-replay.json \
+  | sed 's/^/dlq-replay: /'
+python3 - <<'PY'
+import json
+
+with open("/tmp/realtime-lab-dlq-replay.json", encoding="utf-8") as fp:
+    data = json.load(fp)
+
+if data.get("dryRun") is not False:
+    raise SystemExit("DLQ replay execution must use dryRun=false")
+if data.get("replayed", 0) < 1:
+    raise SystemExit("DLQ replay API did not publish any replayable records")
+PY
+
+echo "checking replay topic through API"
+wait_for_topic_count "transactions.replay" 1
+
 echo "smoke test passed"

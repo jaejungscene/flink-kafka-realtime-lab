@@ -4,9 +4,12 @@ import time
 import uuid
 from typing import Any
 
-from confluent_kafka import Consumer, KafkaException, TopicPartition
+from confluent_kafka import Consumer, KafkaException, Producer, TopicPartition
 from confluent_kafka.admin import AdminClient
 from fastapi import FastAPI, HTTPException, Response
+from pydantic import BaseModel, Field
+
+from src.dlq_tools import normalize_for_replay, summarize_dlq_records, to_dlq_sample
 
 
 BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092")
@@ -20,8 +23,18 @@ METRIC_TOPICS = [
     if topic.strip()
 ]
 FLINK_CONSUMER_GROUP = os.getenv("FLINK_CONSUMER_GROUP", "flink-realtime-lab")
+DLQ_TOPIC = os.getenv("DLQ_TOPIC", "transactions.dlq")
+REPLAY_TOPIC = os.getenv("REPLAY_TOPIC", "transactions.replay")
 
 app = FastAPI(title="Flink KRaft Realtime Lab API", version="1.0.0")
+
+
+class DlqReplayRequest(BaseModel):
+    max_messages: int = Field(default=20, ge=1, le=200)
+    scan_limit: int = Field(default=200, ge=1, le=1000)
+    timeout_seconds: float = Field(default=8.0, ge=1.0, le=30.0)
+    from_beginning: bool = True
+    dry_run: bool = True
 
 
 @app.get("/health")
@@ -106,8 +119,8 @@ def read_messages(
     timeout_seconds: float = 4.0,
     from_beginning: bool = False,
 ) -> dict[str, Any]:
-    if limit < 1 or limit > 200:
-        raise HTTPException(status_code=400, detail="limit must be between 1 and 200")
+    if limit < 1 or limit > 1000:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 1000")
 
     admin = AdminClient({"bootstrap.servers": BOOTSTRAP_SERVERS})
     metadata = admin.list_topics(topic=topic, timeout=5)
@@ -164,3 +177,111 @@ def read_messages(
         return {"topic": topic, "count": len(messages), "messages": messages}
     finally:
         consumer.close()
+
+
+@app.get("/dlq/summary")
+def dlq_summary(
+    limit: int = 200,
+    timeout_seconds: float = 6.0,
+    from_beginning: bool = True,
+) -> dict[str, Any]:
+    if limit < 1 or limit > 1000:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 1000")
+
+    result = read_messages(
+        DLQ_TOPIC,
+        limit=limit,
+        timeout_seconds=timeout_seconds,
+        from_beginning=from_beginning,
+    )
+    summary = summarize_dlq_records(result["messages"])
+    return {
+        "topic": DLQ_TOPIC,
+        "scanLimit": limit,
+        "fromBeginning": from_beginning,
+        **summary,
+    }
+
+
+@app.post("/dlq/replay")
+def replay_dlq(request: DlqReplayRequest) -> dict[str, Any]:
+    scan_limit = max(request.scan_limit, request.max_messages)
+    result = read_messages(
+        DLQ_TOPIC,
+        limit=scan_limit,
+        timeout_seconds=request.timeout_seconds,
+        from_beginning=request.from_beginning,
+    )
+    replay_run_id = f"api-replay-{uuid.uuid4()}"
+    producer = None
+    replayed: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+
+    if not request.dry_run:
+        producer = Producer(
+            {
+                "bootstrap.servers": BOOTSTRAP_SERVERS,
+                "client.id": "realtime-lab-api-replayer",
+                "acks": "all",
+            }
+        )
+
+    try:
+        for record in result["messages"]:
+            value = record.get("value")
+            if not isinstance(value, dict):
+                skipped.append(
+                    {
+                        "partition": record.get("partition"),
+                        "offset": record.get("offset"),
+                        "reason": "DLQ value is not a JSON object",
+                    }
+                )
+                continue
+
+            event = normalize_for_replay(
+                value,
+                str(record.get("topic") or DLQ_TOPIC),
+                int(record.get("partition") or 0),
+                int(record.get("offset") or 0),
+                replay_run_id,
+            )
+            if event is None:
+                skipped.append(to_dlq_sample(record, replay_run_id))
+                continue
+
+            replayed.append(
+                {
+                    "partition": record.get("partition"),
+                    "offset": record.get("offset"),
+                    "eventId": event["eventId"],
+                    "userId": event["userId"],
+                    "replayId": event["replayId"],
+                }
+            )
+
+            if producer is not None:
+                producer.produce(
+                    REPLAY_TOPIC,
+                    key=event["userId"],
+                    value=json.dumps(event, separators=(",", ":")),
+                )
+                producer.poll(0)
+
+            if len(replayed) >= request.max_messages:
+                break
+    finally:
+        if producer is not None:
+            producer.flush()
+
+    return {
+        "runId": replay_run_id,
+        "dryRun": request.dry_run,
+        "sourceTopic": DLQ_TOPIC,
+        "replayTopic": REPLAY_TOPIC,
+        "scanned": len(result["messages"]),
+        "replayed": len(replayed),
+        "skipped": len(skipped),
+        "records": replayed,
+        "skippedSamples": skipped[:10],
+    }

@@ -2,7 +2,7 @@ PROJECT_NAME := flink-kraft-realtime-lab
 COMPOSE := docker compose
 KAFKA := docker compose exec kafka /opt/kafka/bin
 
-.PHONY: build up up-exactly-once down restart logs topics lag produce produce-high-load replay-dlq consume-alerts consume-aggregates consume-dlq consume-replay consume-merchant-profiles schema-up schema-register cdc-up cdc-register cdc-update-merchant observe-up chaos-kill-taskmanager chaos-restart-kafka savepoint smoke ci-smoke ci-smoke-exactly-once test k8s-render-dev k8s-render-prod-like k8s-render-exactly-once clean
+.PHONY: build up up-exactly-once down restart logs topics lag produce produce-high-load replay-dlq dlq-summary dlq-replay-preview dlq-replay-api consume-alerts consume-aggregates consume-dlq consume-replay consume-merchant-profiles schema-up schema-register cdc-up cdc-register cdc-update-merchant observe-up chaos-kill-taskmanager chaos-restart-kafka savepoint smoke ci-smoke ci-smoke-exactly-once test test-python k8s-render-dev k8s-render-prod-like k8s-render-exactly-once clean
 
 build:
 	$(COMPOSE) build
@@ -35,6 +35,15 @@ produce-high-load:
 
 replay-dlq:
 	$(COMPOSE) run --rm replayer
+
+dlq-summary:
+	curl -fsS "http://localhost:8000/dlq/summary?limit=100&from_beginning=true" | python3 -m json.tool
+
+dlq-replay-preview:
+	curl -fsS -X POST "http://localhost:8000/dlq/replay" -H "content-type: application/json" -d '{"max_messages":5,"scan_limit":100,"dry_run":true}' | python3 -m json.tool
+
+dlq-replay-api:
+	curl -fsS -X POST "http://localhost:8000/dlq/replay" -H "content-type: application/json" -d '{"max_messages":5,"scan_limit":100,"dry_run":false}' | python3 -m json.tool
 
 consume-alerts:
 	$(KAFKA)/kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic alerts.fraud --from-beginning
@@ -89,6 +98,9 @@ ci-smoke-exactly-once:
 
 test:
 	docker build --target test -t $(PROJECT_NAME)-flink-test ./flink-job
+
+test-python:
+	PYTHONPATH=api python3 -m unittest discover -s api/tests
 
 k8s-render-dev:
 	kubectl kustomize k8s/overlays/dev

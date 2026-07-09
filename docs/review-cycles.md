@@ -297,3 +297,31 @@
 - Markdown fence check
 - K8s overlay render
 - 전체 정적 검증
+
+## 추가 개선 Cycle: DLQ Summary/Replay API 분리 5회 점검
+
+1차 구현/검토:
+
+- FastAPI에 `GET /dlq/summary`와 `POST /dlq/replay`를 추가했습니다.
+- replay 실행은 기본 `dry_run=true`로 두어 실수로 재처리하지 않게 했습니다.
+
+2차 구현/검토:
+
+- DLQ 보정 로직을 `api/src/dlq_tools.py`로 분리했습니다.
+- API handler가 Kafka 입출력만 담당하고, replay 가능 여부와 summary 계산은 순수 함수로 테스트할 수 있게 했습니다.
+
+3차 구현/검토:
+
+- `make dlq-summary`, `make dlq-replay-preview`, `make dlq-replay-api`를 추가했습니다.
+- 학습자가 원인 요약, 미리보기, 실행을 순서대로 따라갈 수 있게 했습니다.
+
+4차 구현/검토:
+
+- Python helper unit test를 추가하고 CI에 연결했습니다.
+- 로컬 Python 3.9에서 타입 힌트가 import 실패를 일으키는 문제를 발견해 `from __future__ import annotations`로 보완했습니다.
+
+5차 구현/검토:
+
+- smoke test가 DLQ summary, replay preview, 실제 replay 발행, replay topic 도착까지 확인하도록 확장했습니다.
+- Compose와 K8s ConfigMap에 API가 사용하는 DLQ/replay/isolation 설정을 명시했습니다.
+- [DLQ Summary/Replay API 실습](dlq-replay-api-guide.md)에 실행 순서, endpoint, 실무 주의점을 한국어로 정리했습니다.

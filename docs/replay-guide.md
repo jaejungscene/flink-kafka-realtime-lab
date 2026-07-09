@@ -8,6 +8,17 @@ DLQ record를 raw topic에 바로 다시 넣으면 event lineage를 설명하기
 
 ## 로컬 흐름
 
+API로 원인 요약과 replay 미리보기를 먼저 확인합니다.
+
+```bash
+make dlq-summary
+make dlq-replay-preview
+make dlq-replay-api
+make consume-replay
+```
+
+CLI tool container로 같은 replay 흐름을 실행할 수도 있습니다.
+
 ```bash
 make produce
 make consume-dlq
@@ -16,6 +27,8 @@ make consume-replay
 ```
 
 Flink job은 `transactions.raw`와 `transactions.replay`를 모두 소비합니다.
+
+API endpoint 상세는 [DLQ Summary/Replay API 실습](dlq-replay-api-guide.md)을 참고합니다.
 
 ## 재처리 도구가 보정하는 값
 

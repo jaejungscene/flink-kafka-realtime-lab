@@ -32,6 +32,8 @@ curl http://localhost:8000/metrics
 make consume-alerts
 make consume-aggregates
 make consume-dlq
+make dlq-summary
+make dlq-replay-preview
 make replay-dlq
 make consume-replay
 ```
@@ -70,9 +72,11 @@ curl http://localhost:8083/connectors
 ### DLQ record 증가
 
 - Producer schema 변경 여부를 확인합니다.
-- `reason`과 `errorType`을 확인합니다.
+- `make dlq-summary`로 `reason`과 `errorType` 분포를 확인합니다.
+- `make dlq-replay-preview`로 replay 가능한 offset만 먼저 확인합니다.
+- `make dlq-replay-api`는 작은 `max_messages`부터 실행합니다.
 - `REFERENCE_DATA_PARSE_ERROR`는 CDC profile payload가 기대 형식과 다른 경우입니다.
-- `make replay-dlq`는 복구 가능한 record에만 사용합니다.
+- `make replay-dlq`는 API가 아닌 별도 tool container로 replay할 때 사용합니다.
 - Replay record에는 `replayId`, `replayRunId`, `replaySourceTopic`, `replaySourcePartition`, `replaySourceOffset` metadata가 추가됩니다.
 
 ### Schema Registry 등록 실패
