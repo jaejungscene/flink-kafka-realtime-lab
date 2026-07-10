@@ -54,7 +54,7 @@ jobs:
           PY
       - name: Validate shell scripts
         run: |
-          bash -n scripts/create-topics.sh scripts/chaos-kill-taskmanager.sh scripts/flink-savepoint.sh scripts/smoke-test.sh scripts/ci-e2e-smoke.sh
+          bash -n scripts/create-topics.sh scripts/chaos-kill-taskmanager.sh scripts/flink-savepoint.sh scripts/smoke-test.sh scripts/ci-e2e-smoke.sh scripts/load-snapshot.sh scripts/run-load-experiment.sh
           sh -n cdc/register-postgres-connector.sh
       - name: Validate Markdown fences
         run: |

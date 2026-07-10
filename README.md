@@ -44,6 +44,7 @@ flowchart LR
 - `merchant_risk_profiles`: PostgreSQL CDC 기반 가맹점 risk profile을 Flink Broadcast State로 join
 - Schema Registry: Avro schema contract와 evolution 학습
 - Observability: topic message count, DLQ, alert, consumer lag 관측
+- Load/backpressure: 부하 증가, lag, Flink backpressure 관측
 - Failure recovery: TaskManager 장애, Kafka 재시작, savepoint 실습
 - Flink SQL: 동일 집계 요구사항을 SQL로 표현한 비교 예제
 
@@ -54,6 +55,7 @@ flowchart LR
 - [테스트 시나리오](docs/test-scenarios.md): 알람, 집계, DLQ, replay, late event 실험 방법
 - [Schema Registry 가이드](docs/schema-registry-guide.md): Avro schema contract와 evolution
 - [관측성 가이드](docs/observability-guide.md): Prometheus/Grafana와 운영 metric
+- [부하/백프레셔 실험](docs/load-backpressure-guide.md): high-load generator, lag, Flink backpressure 관측
 - [장애와 복구 실습](docs/failure-recovery-guide.md): TaskManager/Kafka 장애, 부하, savepoint
 - [CDC 가이드](docs/cdc-guide.md): PostgreSQL reference data를 Kafka topic으로 흘리고 Flink Broadcast State로 join하는 예제
 - [CI E2E Smoke Test](docs/ci-e2e-smoke.md): GitHub Actions에서 Docker Compose로 핵심 경로를 검증하는 방법
@@ -99,6 +101,8 @@ make dlq-replay-preview
 make dlq-replay-api
 make replay-dlq
 make consume-replay
+make load-snapshot
+make load-experiment-small
 make observe-up
 make schema-up
 make schema-register
@@ -128,6 +132,8 @@ make cdc-register
 make cdc-update-merchant
 
 # 장애/복구/부하 실습
+make load-snapshot
+make load-experiment-small
 make chaos-kill-taskmanager
 make chaos-restart-kafka
 make produce-high-load

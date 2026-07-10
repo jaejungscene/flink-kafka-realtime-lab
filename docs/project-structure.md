@@ -138,7 +138,7 @@ K8s manifests는 바로 운영 복붙용이라기보다, 실무자가 Strimzi/Fl
 ├── observability/   # Prometheus/Grafana starter config
 ├── replayer/        # DLQ -> replay topic 보정 도구
 ├── schemas/         # Avro schema contract 예제
-├── scripts/         # topic 생성과 smoke test script
+├── scripts/         # topic 생성, smoke test, 부하/백프레셔 관측 script
 ├── docker-compose.yml
 └── Makefile
 ```
@@ -150,6 +150,7 @@ K8s manifests는 바로 운영 복붙용이라기보다, 실무자가 Strimzi/Fl
 - JSON parse를 Kafka source가 아니라 Flink 내부에서 수행해 DLQ 처리를 명시합니다.
 - Event-time, watermark, allowed lateness를 통해 실시간성과 정확성의 tradeoff를 보여줍니다.
 - `AT_LEAST_ONCE`와 `EXACTLY_ONCE` 실행 경로를 분리해 checkpoint와 Kafka transaction의 차이를 비교할 수 있습니다.
+- 부하 실험을 Make target과 snapshot script로 분리해 lag, topic count, Flink vertex 상태를 함께 볼 수 있습니다.
 - Rule을 분리해 테스트 가능한 알람 판단 구조를 만듭니다.
 - Docker Compose와 Kubernetes 배포를 모두 제공해 학습 환경과 팀 배포 환경의 차이를 비교할 수 있습니다.
 - Schema Registry, CDC reference join, observability, chaos 실습을 선택 확장으로 제공해 협업/운영 관점까지 볼 수 있습니다.

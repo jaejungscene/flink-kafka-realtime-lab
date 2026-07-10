@@ -43,7 +43,8 @@ make lag
 ## 부하 증가
 
 ```bash
-make produce-high-load
+make load-snapshot
+make load-experiment-small
 make lag
 ```
 
@@ -51,7 +52,16 @@ make lag
 
 - partition 수와 Flink parallelism이 처리량에 어떤 영향을 주는지
 - lag가 증가해도 일정 시간이 지나면 회복되는지
+- 특정 Flink vertex에서 backpressure가 높게 잡히는지
 - DLQ가 같이 증가한다면 producer schema나 validation 실패를 의심해야 하는지
+
+부하를 더 강하게 주려면:
+
+```bash
+LOAD_RUN_SECONDS=300 LOAD_EVENTS_PER_SECOND=250 make load-experiment
+```
+
+자세한 관측 순서는 [부하/백프레셔 실험 가이드](load-backpressure-guide.md)를 참고합니다.
 
 ## Savepoint
 

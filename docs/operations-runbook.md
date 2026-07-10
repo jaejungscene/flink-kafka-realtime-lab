@@ -17,6 +17,7 @@ curl http://localhost:8081/jobs
 curl http://localhost:8000/health
 make topics
 make lag
+make load-snapshot
 curl http://localhost:8000/metrics
 ```
 
@@ -60,6 +61,7 @@ curl http://localhost:8083/connectors
 ### Consumer lag 증가
 
 - `make lag`를 실행합니다.
+- `make load-snapshot`으로 Flink vertex 상태와 topic별 message count를 함께 확인합니다.
 - Flink parallelism을 늘리기 전에 Kafka partition 수를 먼저 확인합니다.
 - Flink UI에서 backpressure와 checkpoint failure를 확인합니다.
 

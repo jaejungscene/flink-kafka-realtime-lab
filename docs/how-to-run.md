@@ -215,11 +215,15 @@ make consume-merchant-profiles
 ### 장애/복구/부하 실습
 
 ```bash
+make load-snapshot
+make load-experiment-small
 make chaos-kill-taskmanager
 make chaos-restart-kafka
 make produce-high-load
 make savepoint
 ```
+
+부하와 backpressure 관측 흐름은 [부하/백프레셔 실험 가이드](load-backpressure-guide.md)를 참고합니다.
 
 자세한 설명은 [장애와 복구 실습 가이드](failure-recovery-guide.md)를 참고합니다.
 

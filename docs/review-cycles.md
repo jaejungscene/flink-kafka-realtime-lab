@@ -325,3 +325,31 @@
 - smoke test가 DLQ summary, replay preview, 실제 replay 발행, replay topic 도착까지 확인하도록 확장했습니다.
 - Compose와 K8s ConfigMap에 API가 사용하는 DLQ/replay/isolation 설정을 명시했습니다.
 - [DLQ Summary/Replay API 실습](dlq-replay-api-guide.md)에 실행 순서, endpoint, 실무 주의점을 한국어로 정리했습니다.
+
+## 추가 개선 Cycle: 부하/백프레셔 실험 5회 점검
+
+1차 구현/검토:
+
+- 기존 `produce-high-load`만으로는 관측 흐름이 부족하다고 판단했습니다.
+- `scripts/load-snapshot.sh`를 추가해 Flink job, vertex, Kafka lag, API metric을 한 번에 확인하도록 했습니다.
+
+2차 구현/검토:
+
+- `scripts/run-load-experiment.sh`를 추가해 부하 실행 중 주기적으로 snapshot을 남기도록 했습니다.
+- `LOAD_RUN_SECONDS`, `LOAD_EVENTS_PER_SECOND`, `LOAD_SNAPSHOT_INTERVAL_SECONDS`로 실험 강도를 조정할 수 있게 했습니다.
+
+3차 구현/검토:
+
+- `make load-snapshot`, `make load-experiment-small`, `make load-experiment`를 추가했습니다.
+- 로컬 노트북에서도 부담이 덜한 small target과 더 강한 target을 분리했습니다.
+
+4차 구현/검토:
+
+- [부하/백프레셔 실험 가이드](load-backpressure-guide.md)를 추가했습니다.
+- lag, backpressure, checkpoint, DLQ 증가를 어떻게 해석해야 하는지 한국어로 정리했습니다.
+
+5차 구현/검토:
+
+- README, 실행 문서, 장애/복구 문서, 관측성 문서, 테스트 시나리오에 새 실험 흐름을 연결했습니다.
+- 새 shell script를 CI syntax check 대상에 포함했습니다.
+- Compose render, shell syntax, markdown fence, K8s render로 최종 검증했습니다.

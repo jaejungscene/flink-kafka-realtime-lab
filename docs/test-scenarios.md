@@ -269,6 +269,7 @@ curl "http://localhost:8000/topics/transactions.replay/messages?limit=10"
 
 ```bash
 make lag
+make load-snapshot
 curl http://localhost:8081/jobs
 ```
 
@@ -281,6 +282,36 @@ curl http://localhost:8081/jobs
 
 - lag가 계속 증가하면 partition 수, Flink parallelism, backpressure, sink 지연을 함께 봐야 합니다.
 - checkpoint 실패는 장애 복구와 exactly/at-least-once 처리 보장에 직접 연결됩니다.
+
+## 시나리오 8-1: 부하/백프레셔 실험
+
+목적:
+
+- 입력량을 늘렸을 때 Kafka lag와 Flink backpressure가 어떻게 변하는지 확인합니다.
+
+실행:
+
+```bash
+make observe-up
+make load-experiment-small
+```
+
+부하를 더 올리려면:
+
+```bash
+LOAD_RUN_SECONDS=300 LOAD_EVENTS_PER_SECOND=250 make load-experiment
+```
+
+기대 결과:
+
+- `make load-snapshot` 출력에서 topic별 message count와 consumer lag를 볼 수 있습니다.
+- Flink UI에서 busy/backpressure/checkpoint 상태를 함께 확인할 수 있습니다.
+- lag가 증가한 뒤 부하가 끝나면 줄어드는지 확인합니다.
+
+학습 포인트:
+
+- 처리량 문제는 Kafka partition, Flink parallelism, window/state, sink commit을 함께 봐야 합니다.
+- 로컬 단일 broker 결과를 production capacity로 일반화하면 안 됩니다.
 
 ## 시나리오 9: Kubernetes Manifest 검증
 

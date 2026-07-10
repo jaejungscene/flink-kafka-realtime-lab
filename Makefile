@@ -2,7 +2,7 @@ PROJECT_NAME := flink-kraft-realtime-lab
 COMPOSE := docker compose
 KAFKA := docker compose exec kafka /opt/kafka/bin
 
-.PHONY: build up up-exactly-once down restart logs topics lag produce produce-high-load replay-dlq dlq-summary dlq-replay-preview dlq-replay-api consume-alerts consume-aggregates consume-dlq consume-replay consume-merchant-profiles schema-up schema-register cdc-up cdc-register cdc-update-merchant observe-up chaos-kill-taskmanager chaos-restart-kafka savepoint smoke ci-smoke ci-smoke-exactly-once test test-python k8s-render-dev k8s-render-prod-like k8s-render-exactly-once clean
+.PHONY: build up up-exactly-once down restart logs topics lag produce produce-high-load load-snapshot load-experiment load-experiment-small replay-dlq dlq-summary dlq-replay-preview dlq-replay-api consume-alerts consume-aggregates consume-dlq consume-replay consume-merchant-profiles schema-up schema-register cdc-up cdc-register cdc-update-merchant observe-up chaos-kill-taskmanager chaos-restart-kafka savepoint smoke ci-smoke ci-smoke-exactly-once test test-python k8s-render-dev k8s-render-prod-like k8s-render-exactly-once clean
 
 build:
 	$(COMPOSE) build
@@ -31,7 +31,16 @@ produce:
 	$(COMPOSE) run --rm generator
 
 produce-high-load:
-	$(COMPOSE) run --rm -e RUN_SECONDS=180 -e EVENTS_PER_SECOND=150 generator
+	$(COMPOSE) run --rm -e RUN_SECONDS=$${RUN_SECONDS:-180} -e EVENTS_PER_SECOND=$${EVENTS_PER_SECOND:-150} generator
+
+load-snapshot:
+	./scripts/load-snapshot.sh
+
+load-experiment:
+	./scripts/run-load-experiment.sh
+
+load-experiment-small:
+	LOAD_RUN_SECONDS=60 LOAD_EVENTS_PER_SECOND=80 LOAD_SNAPSHOT_INTERVAL_SECONDS=20 ./scripts/run-load-experiment.sh
 
 replay-dlq:
 	$(COMPOSE) run --rm replayer

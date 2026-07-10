@@ -8,6 +8,7 @@
 make up
 make observe-up
 make produce
+make load-snapshot
 ```
 
 접속:
@@ -38,6 +39,14 @@ FastAPI의 `/metrics` endpoint가 Kafka topic offset을 읽어 Prometheus 형식
 - `realtime_lab_kafka_consumer_lag`가 계속 증가하나?
 - generator 부하를 올렸을 때 lag가 회복되는가?
 - Flink UI에서 checkpoint 실패나 backpressure가 같이 보이는가?
+
+부하 실험을 함께 보려면:
+
+```bash
+make load-experiment-small
+```
+
+자세한 해석 기준은 [부하/백프레셔 실험 가이드](load-backpressure-guide.md)를 참고합니다.
 
 ## 실무 확장
 
