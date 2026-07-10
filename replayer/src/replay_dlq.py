@@ -2,10 +2,9 @@ import json
 import os
 import time
 import uuid
-from datetime import datetime, timezone
-from typing import Any
 
 from confluent_kafka import Consumer, Producer
+from realtime_lab.dlq_tools import normalize_for_replay
 
 
 BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092")
@@ -14,47 +13,6 @@ REPLAY_TOPIC = os.getenv("REPLAY_TOPIC", "transactions.replay")
 MAX_MESSAGES = int(os.getenv("MAX_MESSAGES", "50"))
 REPLAYER_GROUP_ID = os.getenv("REPLAYER_GROUP_ID", "realtime-lab-replayer")
 REPLAY_RUN_ID = os.getenv("REPLAY_RUN_ID", f"replay-run-{uuid.uuid4()}")
-
-
-def now_millis() -> int:
-    return int(datetime.now(tz=timezone.utc).timestamp() * 1000)
-
-
-def normalize_for_replay(
-    dlq_value: dict[str, Any],
-    source_topic: str,
-    source_partition: int,
-    source_offset: int,
-) -> dict[str, Any] | None:
-    raw_value = dlq_value.get("rawValue")
-    if not raw_value:
-        return None
-
-    try:
-        event = json.loads(raw_value)
-    except json.JSONDecodeError:
-        return None
-
-    event["eventId"] = event.get("eventId") or f"replay-{uuid.uuid4()}"
-    event["userId"] = event.get("userId") or "user-replayed"
-    event["merchantId"] = event.get("merchantId") or "merchant-replayed"
-    event["category"] = event.get("category") or "replay"
-    event["eventTime"] = now_millis()
-    event["amount"] = max(float(event.get("amount", 0.0)), 0.0)
-    event["currency"] = event.get("currency") or "USD"
-    event["country"] = event.get("country") or "UNKNOWN"
-    event["channel"] = event.get("channel") or "replay"
-    event["deviceId"] = event.get("deviceId") or "device-replayed"
-    event["mlFraudScore"] = float(event.get("mlFraudScore", 0.0))
-    event["paymentStatus"] = event.get("paymentStatus") or "REPLAYED"
-    event["ipRisk"] = int(event.get("ipRisk", 0))
-    event["replayId"] = f"{REPLAY_RUN_ID}-{source_partition}-{source_offset}"
-    event["replayRunId"] = REPLAY_RUN_ID
-    event["replaySourceTopic"] = source_topic
-    event["replaySourcePartition"] = source_partition
-    event["replaySourceOffset"] = source_offset
-    event["replayedFromDlqAt"] = now_millis()
-    return event
 
 
 def main() -> None:
@@ -93,7 +51,7 @@ def main() -> None:
                 print(f"skip invalid dlq json: {exc}", flush=True)
                 continue
 
-            event = normalize_for_replay(dlq_value, msg.topic(), msg.partition(), msg.offset())
+            event = normalize_for_replay(dlq_value, msg.topic(), msg.partition(), msg.offset(), REPLAY_RUN_ID)
             if not event:
                 continue
 
@@ -103,7 +61,6 @@ def main() -> None:
                 value=json.dumps(event, separators=(",", ":")),
             )
             producer.poll(0)
-            producer.flush()
             consumer.commit(message=msg, asynchronous=False)
             replayed += 1
     finally:

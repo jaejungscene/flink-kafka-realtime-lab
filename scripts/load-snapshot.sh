@@ -104,6 +104,9 @@ lag_output="$(
 if echo "${lag_output}" | grep -q "GroupIdNotFoundException"; then
   echo "consumer group ${KAFKA_GROUP} not found yet"
 elif [ -n "${lag_output}" ]; then
+  if echo "${lag_output}" | grep -q "has no active members"; then
+    echo "consumer group ${KAFKA_GROUP} has committed offsets but no active member in this instant"
+  fi
   echo "${lag_output}"
 fi
 

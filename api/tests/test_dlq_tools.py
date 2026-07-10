@@ -1,6 +1,6 @@
 import unittest
 
-from src.dlq_tools import normalize_for_replay, summarize_dlq_records
+from realtime_lab.dlq_tools import normalize_for_replay, summarize_dlq_records
 
 
 class DlqToolsTest(unittest.TestCase):

@@ -124,7 +124,8 @@ services:
 
   replayer:
     build:
-      context: ./replayer
+      context: .
+      dockerfile: replayer/Dockerfile
     profiles: [ "tools" ]
     depends_on:
       kafka:
@@ -137,7 +138,8 @@ services:
 
   api:
     build:
-      context: ./api
+      context: .
+      dockerfile: api/Dockerfile
     depends_on:
       kafka:
         condition: service_healthy

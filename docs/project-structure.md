@@ -35,6 +35,7 @@ flowchart LR
 | Generator | `generator/` | Python | 실험용 결제 이벤트 생성 |
 | Replayer | `replayer/` | Python | DLQ 이벤트를 보정해 replay topic으로 재발행하는 CLI tool |
 | API | `api/` | FastAPI | Kafka topic 조회, DLQ summary, replay preview/API 실행 |
+| Python Common | `common/python/` | Python | API와 replayer가 공유하는 DLQ 보정 helper |
 | Schema Registry | `schemas/`, `scripts/register_schemas.py` | Avro, Schema Registry | topic별 schema contract 등록 예제 |
 | CDC | `cdc/` | PostgreSQL, Debezium Connect | 가맹점 risk profile 변경을 Kafka topic으로 발행 |
 | Observability | `observability/` | Prometheus, Grafana | topic count, lag, DLQ, alert 관측 starter |
@@ -130,6 +131,7 @@ K8s manifests는 바로 운영 복붙용이라기보다, 실무자가 Strimzi/Fl
 .
 ├── api/             # Kafka topic 조회와 DLQ summary/replay API
 ├── cdc/             # PostgreSQL CDC와 Debezium connector 예제
+├── common/          # API와 tool container가 공유하는 Python helper
 ├── docs/            # 프로젝트 구조, 실행, 시나리오, 운영/학습 문서
 ├── flink-job/       # Java Flink DataStream job과 unit test
 ├── flink-sql/       # Flink SQL 집계 예제
@@ -147,6 +149,7 @@ K8s manifests는 바로 운영 복붙용이라기보다, 실무자가 Strimzi/Fl
 
 - Raw topic과 replay topic을 분리해 lineage를 보존합니다.
 - DLQ summary와 replay API를 분리해 원인 파악, 미리보기, 실행 흐름을 보여줍니다.
+- API와 CLI replayer가 같은 DLQ replay 보정 로직을 공유해 동작 차이를 줄입니다.
 - JSON parse를 Kafka source가 아니라 Flink 내부에서 수행해 DLQ 처리를 명시합니다.
 - Event-time, watermark, allowed lateness를 통해 실시간성과 정확성의 tradeoff를 보여줍니다.
 - `AT_LEAST_ONCE`와 `EXACTLY_ONCE` 실행 경로를 분리해 checkpoint와 Kafka transaction의 차이를 비교할 수 있습니다.

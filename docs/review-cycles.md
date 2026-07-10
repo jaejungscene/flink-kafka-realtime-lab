@@ -353,3 +353,48 @@
 - README, 실행 문서, 장애/복구 문서, 관측성 문서, 테스트 시나리오에 새 실험 흐름을 연결했습니다.
 - 새 shell script를 CI syntax check 대상에 포함했습니다.
 - Compose render, shell syntax, markdown fence, K8s render로 최종 검증했습니다.
+
+## 전체 품질 점검 Cycle: 코드/구조/문서 10회 점검
+
+1차 검토/수정:
+
+- API와 CLI replayer에 중복된 DLQ replay 보정 로직이 있는 문제를 확인했습니다.
+- `common/python/realtime_lab/dlq_tools.py`로 공용 helper를 분리했습니다.
+
+2차 검토/수정:
+
+- 공용 helper를 Docker image에 포함하도록 API/replayer Dockerfile과 Compose build context를 정리했습니다.
+- API와 replayer가 같은 replay 가능/불가능 판정 기준을 쓰게 했습니다.
+
+3차 검토/수정:
+
+- CLI replayer가 숫자 필드가 깨진 DLQ record에서 실패할 수 있는 문제를 공용 helper 재사용으로 보완했습니다.
+- 메시지마다 producer flush를 수행하던 부분을 줄여 replay 처리 효율을 개선했습니다.
+
+4차 검토/수정:
+
+- CI와 로컬 Python test 경로가 공용 helper 위치를 반영하도록 `PYTHONPATH`와 py_compile 대상을 수정했습니다.
+
+5차 검토/수정:
+
+- `run-load-experiment.sh`가 중단될 때 generator process가 남을 수 있는 문제를 trap으로 보완했습니다.
+
+6차 검토/수정:
+
+- `load-snapshot.sh`의 consumer group 출력이 초기 상태에서 장애처럼 보일 수 있어 설명 문구를 추가했습니다.
+
+7차 검토/수정:
+
+- 프로젝트 구조 문서에 `common/` 디렉터리와 공유 helper 책임을 반영했습니다.
+
+8차 검토/수정:
+
+- README의 어색한 표현을 한국어 문서 톤에 맞게 다듬고 저장소 구조를 최신화했습니다.
+
+9차 검토/수정:
+
+- Flink alert reason 생성 시 locale 영향을 받지 않도록 `String.format(Locale.ROOT, ...)`를 사용했습니다.
+
+10차 검토/수정:
+
+- 전체 정적 검증, Java/Python test, Compose/K8s render, 짧은 runtime smoke를 다시 실행해 변경 범위가 깨지지 않는지 확인했습니다.

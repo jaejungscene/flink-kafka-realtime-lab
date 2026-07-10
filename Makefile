@@ -109,7 +109,7 @@ test:
 	docker build --target test -t $(PROJECT_NAME)-flink-test ./flink-job
 
 test-python:
-	PYTHONPATH=api python3 -m unittest discover -s api/tests
+	PYTHONPATH=api:common/python python3 -m unittest discover -s api/tests
 
 k8s-render-dev:
 	kubectl kustomize k8s/overlays/dev

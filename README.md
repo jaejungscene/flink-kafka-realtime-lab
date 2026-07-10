@@ -1,10 +1,10 @@
 # Flink Kafka(KRaft) 실시간 스트리밍 랩
 
-Kafka KRaft와 Apache Flink로 실시간 집계, 알람 판단, DLQ, replay, late event 처리를 학습하고 실무 설계에 참고할 수 있도록 만든 레포입니다.
+Kafka KRaft와 Apache Flink로 실시간 집계, 알람 판단, DLQ, replay, late event 처리를 학습하고 실무 설계에 참고할 수 있도록 만든 저장소입니다.
 
 이 프로젝트는 ML fraud score가 포함된 결제 이벤트를 Kafka로 수집하고, Flink가 event-time 기준으로 사용자/가맹점/국가별 실시간 판단을 수행한 뒤 Kafka topic으로 결과를 발행합니다.
 
-기본 실행은 가볍게 유지하고, Schema Registry, CDC, Grafana 관측성, 장애 복구 실습, Flink SQL 예제는 선택 profile과 별도 문서로 만들었습니다.
+기본 실행은 가볍게 유지하고, Schema Registry, CDC, Grafana 관측성, 장애 복구 실습, Flink SQL 예제는 선택 profile과 별도 문서로 제공합니다.
 
 ## 버전 기준
 
@@ -165,9 +165,10 @@ Operator 사전 조건, image naming, 배포 순서는 [Kubernetes 가이드](do
 
 ```text
 .
-├── api/             # FastAPI topic reader
-├── docs/            # 가이드, 스키마, runbook, review cycle 문서
+├── api/             # FastAPI topic reader와 DLQ replay API
 ├── cdc/             # PostgreSQL CDC와 Debezium connector 예제
+├── common/          # API와 replayer가 공유하는 Python helper
+├── docs/            # 가이드, 스키마, runbook, review cycle 문서
 ├── flink-job/       # Java Flink DataStream job
 ├── flink-sql/       # Flink SQL 집계 예제
 ├── generator/       # synthetic transaction producer
@@ -175,7 +176,7 @@ Operator 사전 조건, image naming, 배포 순서는 [Kubernetes 가이드](do
 ├── observability/   # Prometheus/Grafana starter dashboard
 ├── replayer/        # DLQ to replay topic helper
 ├── schemas/         # Avro schema contract 예제
-├── scripts/         # topic 생성과 smoke test helper
+├── scripts/         # topic 생성, smoke test, 부하/백프레셔 관측 helper
 └── docker-compose.yml
 ```
 
@@ -186,8 +187,8 @@ make test
 docker compose config
 make ci-smoke
 make ci-smoke-exactly-once
-python3 -m py_compile api/src/main.py api/src/dlq_tools.py generator/src/producer.py replayer/src/replay_dlq.py
-PYTHONPATH=api python3 -m unittest discover -s api/tests
+python3 -m py_compile api/src/main.py common/python/realtime_lab/dlq_tools.py generator/src/producer.py replayer/src/replay_dlq.py
+PYTHONPATH=api:common/python python3 -m unittest discover -s api/tests
 kubectl kustomize k8s/overlays/dev
 kubectl kustomize k8s/overlays/prod-like
 kubectl kustomize k8s/overlays/exactly-once
@@ -195,4 +196,4 @@ kubectl kustomize k8s/overlays/exactly-once
 
 ## 운영 적용 시 주의점
 
-이 저장소는 실행 가능한 lab이지만 그대로 복사해 production platform으로 쓰기 위한 완성본은 아닙니다. 운영에서는 local checkpoint storage를 durable storage로 바꾸고, authentication/TLS, Kafka/Flink durable storage, SLO 알람, schema governance를 추가해야 합니다. 이 프로젝트는 local lab이 실제 시스템으로 확장될 때 무엇이 달라져야 하는지 학습할 수 있도록 그 차이를 명시합니다.
+이 저장소는 실행 가능한 lab이지만 그대로 복사해 운영 platform으로 쓰기 위한 완성본은 아닙니다. 운영에서는 local checkpoint storage를 durable storage로 바꾸고, authentication/TLS, Kafka/Flink durable storage, SLO 알람, schema governance를 추가해야 합니다. 이 프로젝트는 local lab이 실제 시스템으로 확장될 때 무엇이 달라져야 하는지 학습할 수 있도록 그 차이를 명시합니다.

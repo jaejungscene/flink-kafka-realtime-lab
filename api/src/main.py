@@ -9,7 +9,7 @@ from confluent_kafka.admin import AdminClient
 from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field
 
-from src.dlq_tools import normalize_for_replay, summarize_dlq_records, to_dlq_sample
+from realtime_lab.dlq_tools import normalize_for_replay, summarize_dlq_records, to_dlq_sample
 
 
 BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092")

@@ -34,9 +34,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: azure/setup-kubectl@v4
       - name: Compile Python tools
-        run: python3 -m py_compile api/src/main.py api/src/dlq_tools.py generator/src/producer.py replayer/src/replay_dlq.py scripts/register_schemas.py
+        run: python3 -m py_compile api/src/main.py common/python/realtime_lab/dlq_tools.py generator/src/producer.py replayer/src/replay_dlq.py scripts/register_schemas.py
       - name: Test API DLQ helpers
-        run: PYTHONPATH=api python3 -m unittest discover -s api/tests
+        run: PYTHONPATH=api:common/python python3 -m unittest discover -s api/tests
       - name: Validate JSON schema and dashboard files
         run: |
           python3 - <<'PY'

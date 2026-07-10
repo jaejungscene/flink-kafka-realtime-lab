@@ -40,6 +40,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public class RealTimeAlertJob {
@@ -329,9 +330,9 @@ public class RealTimeAlertJob {
                     "single event exceeded fraud rule threshold; merchantRiskTier="
                             + riskTier
                             + ", merchantRiskMultiplier="
-                            + String.format("%.3f", event.getMerchantRiskMultiplier())
+                            + String.format(Locale.ROOT, "%.3f", event.getMerchantRiskMultiplier())
                             + ", effectiveFraudScore="
-                            + String.format("%.4f", effectiveFraudScore),
+                            + String.format(Locale.ROOT, "%.4f", effectiveFraudScore),
                     event.getEventTime(),
                     event.getEventTime(),
                     event.getEventTime(),
@@ -361,7 +362,7 @@ public class RealTimeAlertJob {
                 String reason = "user window exceeded count or amount threshold; count="
                         + count
                         + ", totalAmount="
-                        + String.format("%.2f", totalAmount);
+                        + String.format(Locale.ROOT, "%.2f", totalAmount);
 
                 out.collect(AlertEvent.of(
                         "USER_PAYMENT_BURST",
@@ -457,9 +458,9 @@ public class RealTimeAlertJob {
             String reason = "merchant window anomaly; count="
                     + stat.count
                     + ", totalAmount="
-                    + String.format("%.2f", stat.totalAmount)
+                    + String.format(Locale.ROOT, "%.2f", stat.totalAmount)
                     + ", avgFraudScore="
-                    + String.format("%.4f", avgFraudScore);
+                    + String.format(Locale.ROOT, "%.4f", avgFraudScore);
 
             out.collect(AlertEvent.of(
                     "MERCHANT_ANOMALY",

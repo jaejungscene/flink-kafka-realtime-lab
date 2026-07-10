@@ -60,6 +60,8 @@ curl "http://localhost:8000/topics/transactions.replay/messages?limit=10"
 
 API replay는 CLI replayer와 같은 기준으로 보정합니다.
 
+보정 로직은 `common/python/realtime_lab/dlq_tools.py`에 있으며, FastAPI와 CLI replayer가 같은 helper를 사용합니다.
+
 - 누락된 `eventId`, `userId`, `merchantId`, `category` 채움
 - 음수 `amount`를 `0` 이상으로 보정
 - `eventTime`을 현재 시각으로 갱신
