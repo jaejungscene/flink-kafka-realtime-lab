@@ -43,9 +43,13 @@ Flink job은 `--sinkDeliveryGuarantee` 인자를 받습니다.
 - Exactly-once는 “Flink가 Kafka output topic에 commit하는 범위”의 보장입니다.
 - Kafka consumer가 transaction 결과만 보려면 `isolation.level=read_committed`가 필요합니다.
 - 외부 HTTP 호출, DB upsert, 알림 발송 같은 sink까지 자동으로 exactly-once가 되지는 않습니다.
+- producer가 같은 business event나 DLQ offset을 다시 발행하는 중복은 delivery guarantee가
+  제거하지 않습니다. `eventId`/`replayId` 기반 dedup 정책이 별도로 필요합니다.
 - checkpoint interval이 너무 길면 transaction이 오래 열리고, 너무 짧으면 overhead가 늘어납니다.
 - 운영 Kafka는 `transaction.state.log.replication.factor`, `transaction.state.log.min.isr`, `transaction.max.timeout.ms`를 broker 수와 checkpoint 정책에 맞게 설정해야 합니다.
 - 장애 복구 후 중복이 절대 없어야 하는 도메인은 output key, idempotent sink, dedup key도 함께 설계해야 합니다.
+- Flink checkpoint mode와 Kafka sink guarantee는 함께 바꿔야 합니다. 이 저장소의 Make
+  target과 K8s overlay는 두 값을 같은 모드로 설정합니다.
 
 ## 이 프로젝트의 의도
 

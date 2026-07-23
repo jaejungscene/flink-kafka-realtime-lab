@@ -1,400 +1,164 @@
-# 5회 검토 Cycle 기록
+# 전체 품질 검토 기록
 
-이 프로젝트는 다섯 번의 "완성, 검토, 수정 보완, 테스트" cycle을 거쳐 구성했습니다.
+이 문서는 저장소를 10개 관점으로 나누어 검토하고 수정한 결과를 기록합니다.
+단순히 기능 목록을 나열하지 않고, 발견한 위험과 실제 변경 사항, 남아 있는 한계를
+구분합니다.
 
-## 1차 Cycle: 버전 기준 정리
+## 1. 프로젝트 구조와 코드 규칙
 
-완성:
+발견한 문제:
 
-- Kafka `4.1.2`와 Flink `2.1.2` 기준으로 프로젝트를 전환했습니다.
-- Flink Kafka connector를 `4.0.1-2.0`으로 고정했습니다.
+- 예제용 `com.example` package가 그대로 남아 소유권과 artifact 좌표가 불명확했습니다.
+- CLI 인자가 main class에 흩어져 있고 잘못된 값이나 오타를 조용히 허용했습니다.
+- Kafka sink 생성 코드가 반복되어 delivery guarantee 설정이 달라질 여지가 있었습니다.
 
-검토:
+수정:
 
-- Docker image 존재 여부
-- Maven artifact 존재 여부
-- Docker Compose 설정 정합성
+- Java package와 Maven group을 `io.github.jaejungscene`으로 통일했습니다.
+- `JobConfig`에서 지원 인자, 중복, 필수 형식, topic 충돌, 시간 범위를 검증합니다.
+- `KafkaSinkFactory`로 직렬화와 transactional ID 생성을 한곳에서 관리합니다.
 
-수정 보완:
+## 2. Kafka 전달 보장과 레코드 계보
 
-- `docs/version-decision.md`에 버전 선택 근거를 추가했습니다.
+발견한 문제:
 
-테스트:
+- value-only 역직렬화 때문에 DLQ에 실제 source partition/offset을 기록할 수 없었습니다.
+- alert ID가 매번 무작위라 같은 입력을 재처리하면 dedup 기준이 달라졌습니다.
 
-- `docker compose config`
-- Docker manifest check
-- Maven metadata check
+수정:
 
-## 2차 Cycle: 스트리밍 핵심 시나리오
+- Kafka topic, partition, offset, timestamp, key, value를 `KafkaRecord`로 보존합니다.
+- DLQ와 replay event에 원본 좌표를 전달합니다.
+- alert ID를 rule/window/key/sample event 기반의 결정적 UUID로 생성합니다.
 
-완성:
+## 3. Event time과 late data
 
-- Replay topic 소비를 추가했습니다.
-- Merchant anomaly alert를 추가했습니다.
-- Late event를 DLQ로 분리하는 처리를 추가했습니다.
+발견한 문제:
 
-검토:
+- 유휴 partition이 전체 watermark 진행을 막을 수 있었습니다.
+- 미래 시각과 위험도 범위를 검증하지 않아 window가 비정상적으로 진행될 수 있었습니다.
+- 서로 다른 단위인 금액과 score 중 큰 값을 metric으로 기록했습니다.
 
-- 각 시나리오가 실제 production streaming concern과 연결되는지 확인했습니다.
+수정:
 
-수정 보완:
+- watermark idleness와 허용 가능한 미래 시각을 설정으로 분리했습니다.
+- `amount`, `eventTime`, `mlFraudScore`, `ipRisk` 범위를 검증합니다.
+- alert에 `metricName`을 추가하고 `metricValue`의 단위를 일관되게 유지합니다.
 
-- `transactions.replay` topic과 DLQ metadata field를 추가했습니다.
-- Rule test를 보강했습니다.
+## 4. CDC와 Broadcast State
 
-테스트:
+발견한 문제:
 
-- High-risk, burst, merchant anomaly, replay eligibility rule test
+- Debezium delete marker 설정과 parser 기대값이 달라 삭제가 state에 반영되지 않았습니다.
+- 잘못된 risk tier와 숫자 값을 기본값으로 바꾸어 데이터 오류를 숨겼습니다.
 
-## 3차 Cycle: Docker 운영성
+수정:
 
-완성:
+- delete rewrite event를 사용하고 `__deleted`를 명시적으로 처리합니다.
+- risk tier, multiplier, boolean field를 엄격히 검증합니다.
+- 잘못된 reference event는 `REFERENCE_DATA_PARSE_ERROR` DLQ로 분리합니다.
 
-- Lag, DLQ, replay, smoke check용 Makefile command를 추가했습니다.
-- Replayer service를 추가했습니다.
+## 5. DLQ와 replay 안전성
 
-검토:
+발견한 문제:
 
-- 처음 보는 학습자가 약 10분 안에 실행할 수 있는지 확인했습니다.
+- late event, 음수 금액, 누락된 사용자처럼 의미를 추론할 수 없는 데이터까지 자동
+  보정했습니다.
+- API 실행이 preview 결과와 연결되지 않아 스캔 사이에 대상이 바뀔 수 있었습니다.
+- CLI consumer offset이 Kafka publish 확인 전에 commit될 수 있었습니다.
 
-수정 보완:
+수정:
 
-- Smoke check가 alerts, aggregates, DLQ를 모두 확인하도록 확장했습니다.
+- 자동 replay는 원본 JSON이 유효한 `PARSE_OR_VALIDATION_ERROR`로 제한합니다.
+- `userId`, 원래 event time, 유효한 금액과 위험도는 보존하며 누락된 `eventId`만
+  source offset 기반으로 결정적으로 생성할 수 있습니다.
+- preview에서 고른 partition/offset, 동일한 `replay_run_id`, `confirm=true`가 있어야
+  실행됩니다.
+- producer delivery를 확인한 뒤에만 CLI consumer offset을 commit합니다.
 
-테스트:
+## 6. 관측성과 장애 복구
 
-- Docker Compose render
-- Python compile check
+발견한 문제:
 
-## 4차 Cycle: Kubernetes
+- Prometheus scrape마다 모든 Kafka offset을 다시 조회했습니다.
+- API process 생존과 Kafka 연결 준비 상태가 하나의 health endpoint에 섞여 있었습니다.
+- offset 차이를 정확한 메시지 수처럼 표현했습니다.
 
-완성:
+수정:
 
-- Strimzi Kafka와 Flink Kubernetes Operator manifests를 추가했습니다.
-- `dev`, `prod-like` overlay를 추가했습니다.
+- metric 결과를 짧게 cache하고 partition별 수집 오류를 격리합니다.
+- `/health`와 `/ready`를 분리합니다.
+- metric을 `retained_records` 추정치로 명명하고 Kafka 상태, lag, 수집 오류 alert rule을
+  추가했습니다.
+- TaskManager 장애 실습은 job이 다시 `RUNNING`이 될 때까지 확인합니다.
 
-검토:
+## 7. Docker Compose와 Kubernetes
 
-- GitOps/operator workflow에 익숙한 실무자가 참고할 수 있는 구조인지 확인했습니다.
+발견한 문제:
 
-수정 보완:
+- 고정된 `sleep` 뒤 job을 제출해 시작 순서에 민감했습니다.
+- Compose checkpoint와 savepoint가 컨테이너 수명에 묶였습니다.
+- K8s API에 readiness, resource, container security 설정이 부족했습니다.
 
-- Local dev 설정과 prod-like replication/resource 설정을 분리했습니다.
+수정:
 
-테스트:
+- JobManager 준비 상태를 확인한 뒤 job을 제출합니다.
+- Compose named volume에 checkpoint/savepoint를 보존합니다.
+- K8s liveness/readiness, resource request/limit, non-root, read-only root filesystem,
+  capability drop을 적용했습니다.
+- `prod-like` API에 2 replicas, topology spread, PDB를 추가했습니다.
 
-- `kubectl kustomize k8s/overlays/dev`
-- `kubectl kustomize k8s/overlays/prod-like`
+`prod-like` overlay의 object storage 경로와 image는 의도적인 placeholder입니다. 실제
+plugin, 인증, TLS, NetworkPolicy가 없으므로 production manifest로 간주하지 않습니다.
 
-## 5차 Cycle: 학습과 인수인계 문서
+## 8. 테스트와 CI
 
-완성:
+수정:
 
-- README, learning guide, schema docs, runbook, replay guide, Kubernetes guide, CI를 정리했습니다.
+- Maven/Java 실행 버전을 enforcer로 고정하고 `mvn verify`를 품질 게이트로 사용합니다.
+- Kafka envelope, parser, CDC delete, deterministic alert ID, sink ID, strict JSON parser를
+  단위 테스트합니다.
+- FastAPI replay guard, token, topic allowlist, metric cache를 Docker test stage에서
+  검증합니다.
+- CI에서 Compose profile, Prometheus rule, JSON, shell, Kustomize overlay를 검증하고
+  마지막에 Compose E2E smoke test를 실행합니다.
 
-검토:
+## 9. 보안과 설정 관리
 
-- 학습자에게 유익한지
-- 기업 실무 참고 가치가 있는지
-- 면접과 협업 상황에서 설명 가능한지
+발견한 문제:
 
-수정 보완:
+- API에서 Kafka Connect 내부 topic까지 임의로 조회할 수 있었습니다.
+- replay endpoint에 접근 제어 경계가 없었습니다.
+- PostgreSQL과 Grafana 비밀번호가 구성에 고정되어 있었습니다.
 
-- Local에서 바로 실행 가능한 부분과 production에서 반드시 바꿔야 하는 부분을 문서화했습니다.
+수정:
 
-테스트:
+- `READABLE_TOPICS` allowlist와 선택적 `API_TOKEN` 인증을 추가했습니다.
+- K8s token은 optional Secret에서 읽고, 로컬 비밀번호는 `.env`로 덮어쓸 수 있습니다.
+- Debezium connector 비밀번호는 Kafka Connect `EnvVarConfigProvider`로 주입합니다.
+- producer는 idempotence와 delivery callback을 사용하고 실패를 성공으로 보고하지 않습니다.
 
-- Static check
-- Manifest render check
-- CI workflow coverage
+## 10. 문서와 표현
 
-## 확장 1차 Cycle: Schema Registry
+수정:
 
-완성:
+- 오래된 repository/package 경로와 실제 코드에 맞지 않는 replay 설명을 고쳤습니다.
+- Kafka offset 차이를 정확한 건수처럼 표현하던 문장을 추정치로 수정했습니다.
+- `EXACTLY_ONCE`의 범위를 Kafka output commit으로 한정하고 외부 side effect 보장은
+  별도임을 명시했습니다.
+- 로컬 실행 구성, 검토용 `prod-like` overlay, 실제 production 요구사항을 구분했습니다.
 
-- `schemas/`에 topic별 Avro schema 예제를 추가했습니다.
-- Schema Registry와 schema 등록 script를 Docker Compose profile로 추가했습니다.
+## 검증 기준
 
-검토:
+변경 완료 후 다음을 함께 통과해야 합니다.
 
-- 기본 JSON 실행 경로를 깨지 않고 schema governance를 학습할 수 있는지 확인했습니다.
+- Java unit test와 shaded JAR build
+- Python helper/API contract test
+- Python compile, shell syntax, JSON/Avro JSON 구문 검사
+- Docker Compose 전체 profile 렌더링
+- Prometheus config/rule 검사
+- Kubernetes dev, exactly-once, prod-like overlay 렌더링
+- Kafka → Flink → alert/aggregate/DLQ → replay Compose E2E smoke test
 
-수정 보완:
-
-- 본편 serialization 변경 대신 선택 실행으로 분리해 학습 난도를 낮췄습니다.
-
-테스트:
-
-- `docker compose config`
-- Avro schema JSON parse
-
-## 확장 2차 Cycle: 관측성
-
-완성:
-
-- FastAPI `/metrics` endpoint를 추가했습니다.
-- Prometheus scrape config와 Grafana starter dashboard를 추가했습니다.
-
-검토:
-
-- 실무자가 먼저 보는 lag, DLQ, alert, topic count가 드러나는지 확인했습니다.
-
-수정 보완:
-
-- Flink 내부 metric 전체를 억지로 붙이지 않고, lab에서 안정적으로 볼 수 있는 Kafka/API metric부터 제공했습니다.
-
-테스트:
-
-- Python compile
-- Prometheus/Grafana provisioning 파일 parse
-
-## 확장 3차 Cycle: 장애와 복구
-
-완성:
-
-- TaskManager kill/restart, Kafka restart, high-load produce, savepoint target을 추가했습니다.
-
-검토:
-
-- 장애 실습이 destructive하지 않고 로컬 compose 안에서 회복 가능한지 확인했습니다.
-
-수정 보완:
-
-- `make` target을 짧게 만들고 상세 설명은 `docs/failure-recovery-guide.md`로 분리했습니다.
-
-테스트:
-
-- Shell script syntax check
-- `docker compose config`
-
-## 확장 4차 Cycle: CDC와 reference data
-
-완성:
-
-- PostgreSQL, Debezium Kafka Connect, connector 등록 script, merchant risk profile seed data를 추가했습니다.
-- Flink job이 `merchant_risk_profiles` topic을 Broadcast State로 join하도록 보강했습니다.
-
-검토:
-
-- Fraud stream 본편의 실행 난도를 크게 올리지 않으면서 실무 reference data join 주제를 보여주는지 확인했습니다.
-
-수정 보완:
-
-- Reference topic을 compacted topic으로 두고, Flink source는 earliest부터 읽어 state 복구가 가능하게 했습니다.
-- Profile이 없는 가맹점은 multiplier `1.0`으로 처리해 기본 파이프라인이 깨지지 않게 했습니다.
-- 깨진 CDC payload는 `REFERENCE_DATA_PARSE_ERROR`로 DLQ에 보냅니다.
-
-테스트:
-
-- Connector JSON parse
-- Docker Compose profile render
-- Merchant profile parser test
-- Risk multiplier rule test
-
-## 추가 개선 Cycle: CDC Broadcast State Join 5회 점검
-
-1차 구현/검토:
-
-- `MerchantRiskProfile` 모델과 parser를 추가했습니다.
-- Debezium snake_case payload와 local camelCase payload를 모두 받을 수 있게 했습니다.
-
-2차 구현/검토:
-
-- `merchant_risk_profiles` Kafka source를 earliest offset으로 추가했습니다.
-- Broadcast State를 사용해 모든 parallel task가 동일한 reference data를 보도록 했습니다.
-
-3차 구현/검토:
-
-- `RiskRules.effectiveFraudScore`를 추가해 multiplier 계산 책임을 rule 계층에 모았습니다.
-- manual review 가맹점의 경계선 이벤트 승격 조건을 테스트로 고정했습니다.
-
-4차 구현/검토:
-
-- Docker Compose와 Kubernetes FlinkDeployment에 `--merchantRiskProfileTopic` 인자를 명시했습니다.
-- CDC guide, schema, test scenario, runbook을 현재 구현 기준으로 고쳤습니다.
-
-5차 구현/검토:
-
-- profile이 없을 때 기본 multiplier `1.0`으로 동작하는지 확인했습니다.
-- 깨진 profile payload가 DLQ로 가는지 parser 경로를 확인했습니다.
-- `make test`, Compose config, K8s overlay render로 최종 검증했습니다.
-
-## 추가 개선 Cycle: CI E2E Smoke Test 5회 점검
-
-1차 구현/검토:
-
-- 로컬 smoke script를 그대로 CI에 복사하지 않고 `scripts/ci-e2e-smoke.sh` wrapper를 추가했습니다.
-- 환경 시작, Flink job 대기, generator 실행, smoke 검증, cleanup을 한 흐름으로 묶었습니다.
-
-2차 구현/검토:
-
-- 실패 시 `docker compose ps`와 핵심 서비스 로그가 자동 출력되도록 했습니다.
-- CI 로그에서 원인을 빠르게 찾을 수 있게 GitHub Actions group 출력을 사용했습니다.
-
-3차 구현/검토:
-
-- GitHub Actions에 `compose-e2e-smoke` job을 추가했습니다.
-- 비용이 큰 E2E 검증은 단위 테스트와 정적 검증이 통과한 뒤 실행되도록 `needs`를 걸었습니다.
-
-4차 구현/검토:
-
-- 새 script를 shell syntax check 대상에 포함했습니다.
-- `SMOKE_TOPIC_ATTEMPTS`, `SMOKE_TOPIC_SLEEP_SECONDS` 등 재시도 값을 환경변수로 조정할 수 있게 했습니다.
-
-5차 구현/검토:
-
-- `COMPOSE_PROJECT_NAME=realtime-lab-ci`를 기본값으로 두어 로컬 개발 stack과 충돌을 줄였습니다.
-- 첫 E2E 실행에서 CDC Broadcast State join이 downstream watermark를 막아 aggregate가 나오지 않는 문제를 발견했습니다.
-- Flink topology를 enrich 후 watermark 부여 순서로 바꾸어 reference stream 유휴 상태가 window emit을 막지 않게 했습니다.
-- [CI E2E Smoke Test](ci-e2e-smoke.md)에 목적, 실행 방법, 실패 원인, 실무 확장 포인트를 한국어로 정리했습니다.
-
-## 추가 개선 Cycle: Delivery Guarantee 분리 5회 점검
-
-1차 구현/검토:
-
-- Flink Kafka sink의 delivery guarantee를 `--sinkDeliveryGuarantee` 인자로 분리했습니다.
-- `EXACTLY_ONCE`일 때 topic별 transactional id prefix를 설정했습니다.
-
-2차 구현/검토:
-
-- 실습 목적이 흐려지지 않도록 허용 값은 `AT_LEAST_ONCE`, `EXACTLY_ONCE`로 제한했습니다.
-- 잘못된 값은 job 시작 시 명확한 에러로 실패하게 했습니다.
-
-3차 구현/검토:
-
-- Docker Compose 기본값은 `AT_LEAST_ONCE`로 유지했습니다.
-- `make up-exactly-once`, `make ci-smoke-exactly-once`를 추가해 선택 실습 경로를 분리했습니다.
-
-4차 구현/검토:
-
-- API consumer가 `KAFKA_ISOLATION_LEVEL`을 받도록 했습니다.
-- Exactly-once 실행에서는 `read_committed`로 결과 topic을 읽게 했습니다.
-
-5차 구현/검토:
-
-- Kubernetes `exactly-once` overlay를 추가했습니다.
-- 첫 exactly-once smoke에서 broker `transaction.max.timeout.ms`가 Flink Kafka sink transaction timeout보다 작아 job이 실패하는 문제를 발견했습니다.
-- Docker Compose와 Strimzi Kafka 설정에 `transaction.max.timeout.ms=3600000`을 명시했습니다.
-- [Delivery Guarantee 실습](delivery-guarantee-guide.md)에 보장 범위, 실행 방법, 실무 주의점을 한국어로 정리했습니다.
-
-## 확장 5차 Cycle: Flink SQL과 문서 연결
-
-완성:
-
-- 동일 집계 요구사항을 표현한 Flink SQL 예제를 추가했습니다.
-- README, 실행 문서, 시나리오 문서, 운영 runbook을 확장 기능과 연결했습니다.
-
-검토:
-
-- 학습자와 실무자가 어떤 순서로 보면 좋은지 문서에서 바로 보이는지 확인했습니다.
-
-수정 보완:
-
-- 각 확장 주제를 별도 가이드로 나누어 README가 과하게 길어지지 않게 했습니다.
-
-테스트:
-
-- Markdown fence check
-- K8s overlay render
-- 전체 정적 검증
-
-## 추가 개선 Cycle: DLQ Summary/Replay API 분리 5회 점검
-
-1차 구현/검토:
-
-- FastAPI에 `GET /dlq/summary`와 `POST /dlq/replay`를 추가했습니다.
-- replay 실행은 기본 `dry_run=true`로 두어 실수로 재처리하지 않게 했습니다.
-
-2차 구현/검토:
-
-- DLQ 보정 로직을 `api/src/dlq_tools.py`로 분리했습니다.
-- API handler가 Kafka 입출력만 담당하고, replay 가능 여부와 summary 계산은 순수 함수로 테스트할 수 있게 했습니다.
-
-3차 구현/검토:
-
-- `make dlq-summary`, `make dlq-replay-preview`, `make dlq-replay-api`를 추가했습니다.
-- 학습자가 원인 요약, 미리보기, 실행을 순서대로 따라갈 수 있게 했습니다.
-
-4차 구현/검토:
-
-- Python helper unit test를 추가하고 CI에 연결했습니다.
-- 로컬 Python 3.9에서 타입 힌트가 import 실패를 일으키는 문제를 발견해 `from __future__ import annotations`로 보완했습니다.
-
-5차 구현/검토:
-
-- smoke test가 DLQ summary, replay preview, 실제 replay 발행, replay topic 도착까지 확인하도록 확장했습니다.
-- Compose와 K8s ConfigMap에 API가 사용하는 DLQ/replay/isolation 설정을 명시했습니다.
-- [DLQ Summary/Replay API 실습](dlq-replay-api-guide.md)에 실행 순서, endpoint, 실무 주의점을 한국어로 정리했습니다.
-
-## 추가 개선 Cycle: 부하/백프레셔 실험 5회 점검
-
-1차 구현/검토:
-
-- 기존 `produce-high-load`만으로는 관측 흐름이 부족하다고 판단했습니다.
-- `scripts/load-snapshot.sh`를 추가해 Flink job, vertex, Kafka lag, API metric을 한 번에 확인하도록 했습니다.
-
-2차 구현/검토:
-
-- `scripts/run-load-experiment.sh`를 추가해 부하 실행 중 주기적으로 snapshot을 남기도록 했습니다.
-- `LOAD_RUN_SECONDS`, `LOAD_EVENTS_PER_SECOND`, `LOAD_SNAPSHOT_INTERVAL_SECONDS`로 실험 강도를 조정할 수 있게 했습니다.
-
-3차 구현/검토:
-
-- `make load-snapshot`, `make load-experiment-small`, `make load-experiment`를 추가했습니다.
-- 로컬 노트북에서도 부담이 덜한 small target과 더 강한 target을 분리했습니다.
-
-4차 구현/검토:
-
-- [부하/백프레셔 실험 가이드](load-backpressure-guide.md)를 추가했습니다.
-- lag, backpressure, checkpoint, DLQ 증가를 어떻게 해석해야 하는지 한국어로 정리했습니다.
-
-5차 구현/검토:
-
-- README, 실행 문서, 장애/복구 문서, 관측성 문서, 테스트 시나리오에 새 실험 흐름을 연결했습니다.
-- 새 shell script를 CI syntax check 대상에 포함했습니다.
-- Compose render, shell syntax, markdown fence, K8s render로 최종 검증했습니다.
-
-## 전체 품질 점검 Cycle: 코드/구조/문서 10회 점검
-
-1차 검토/수정:
-
-- API와 CLI replayer에 중복된 DLQ replay 보정 로직이 있는 문제를 확인했습니다.
-- `common/python/realtime_lab/dlq_tools.py`로 공용 helper를 분리했습니다.
-
-2차 검토/수정:
-
-- 공용 helper를 Docker image에 포함하도록 API/replayer Dockerfile과 Compose build context를 정리했습니다.
-- API와 replayer가 같은 replay 가능/불가능 판정 기준을 쓰게 했습니다.
-
-3차 검토/수정:
-
-- CLI replayer가 숫자 필드가 깨진 DLQ record에서 실패할 수 있는 문제를 공용 helper 재사용으로 보완했습니다.
-- 메시지마다 producer flush를 수행하던 부분을 줄여 replay 처리 효율을 개선했습니다.
-
-4차 검토/수정:
-
-- CI와 로컬 Python test 경로가 공용 helper 위치를 반영하도록 `PYTHONPATH`와 py_compile 대상을 수정했습니다.
-
-5차 검토/수정:
-
-- `run-load-experiment.sh`가 중단될 때 generator process가 남을 수 있는 문제를 trap으로 보완했습니다.
-
-6차 검토/수정:
-
-- `load-snapshot.sh`의 consumer group 출력이 초기 상태에서 장애처럼 보일 수 있어 설명 문구를 추가했습니다.
-
-7차 검토/수정:
-
-- 프로젝트 구조 문서에 `common/` 디렉터리와 공유 helper 책임을 반영했습니다.
-
-8차 검토/수정:
-
-- README의 어색한 표현을 한국어 문서 톤에 맞게 다듬고 저장소 구조를 최신화했습니다.
-
-9차 검토/수정:
-
-- Flink alert reason 생성 시 locale 영향을 받지 않도록 `String.format(Locale.ROOT, ...)`를 사용했습니다.
-
-10차 검토/수정:
-
-- 전체 정적 검증, Java/Python test, Compose/K8s render, 짧은 runtime smoke를 다시 실행해 변경 범위가 깨지지 않는지 확인했습니다.
+이 검증은 회귀를 줄이는 장치이지 성능, 보안, 고가용성, 데이터 정확성에 대한 production
+인증은 아닙니다.

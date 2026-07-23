@@ -18,6 +18,7 @@
 ```bash
 kubectl kustomize k8s/overlays/dev
 kubectl kustomize k8s/overlays/prod-like
+kubectl kustomize k8s/overlays/exactly-once
 ```
 
 ## 적용 순서
@@ -28,6 +29,14 @@ kubectl -n realtime-lab get kafka,kafkatopic,flinkdeployment,pod
 ```
 
 `Kafka`, `KafkaTopic`, `KafkaNodePool`, `FlinkDeployment`는 custom resource입니다. 따라서 Strimzi와 Flink Operator CRD가 먼저 설치되어 있어야 합니다.
+
+API 인증을 켜려면 apply 전에 optional Secret을 만듭니다.
+
+```bash
+kubectl apply -f k8s/base/namespace.yaml
+kubectl -n realtime-lab create secret generic realtime-lab-api-secrets \
+  --from-literal=api-token='replace-with-a-strong-token'
+```
 
 ## 개발용 Overlay
 
@@ -40,9 +49,10 @@ kubectl -n realtime-lab get kafka,kafkatopic,flinkdeployment,pod
 - stateless Flink upgrade mode
 - 짧은 generator 실행
 
-## 운영 유사 Overlay
+## Prod-like 검토 Overlay
 
-`prod-like` overlay는 실제 운영에서 고려할 선택지를 보여주기 위한 참고 구성입니다.
+`prod-like` overlay는 개발 구성과 다중 노드 구성의 차이를 렌더링해 검토하기 위한
+예시입니다.
 
 - Kafka broker 3개
 - dual-role KafkaNodePool node 3개
@@ -51,5 +61,10 @@ kubectl -n realtime-lab get kafka,kafkatopic,flinkdeployment,pod
 - Flink TaskManager 2개
 - savepoint upgrade mode
 - checkpoint/savepoint object storage placeholder
+- API 2 replicas, topology spread, PodDisruptionBudget
 
-실제 production에 적용하기 전에는 placeholder image 이름을 registry 경로로 바꾸고, `s3://replace-me-realtime-lab/...` checkpoint/savepoint 경로를 회사 object storage로 바꾸어야 합니다. TLS/auth, metrics, alerting, network policy도 회사 환경에 맞게 추가해야 합니다.
+placeholder image와 `s3://replace-me-realtime-lab/...` 경로를 바꾸는 것만으로는 충분하지
+않습니다. Flink image에 filesystem plugin과 인증을 추가하고 Kafka TLS/auth,
+NetworkPolicy, secret manager, metric reporter와 alert routing을 환경에 맞게 설계해야
+합니다. 준비 전에는 `kubectl apply`하지 말고
+`k8s/overlays/prod-like/README.md`의 점검 목록을 따르십시오.

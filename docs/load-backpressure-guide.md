@@ -43,7 +43,7 @@ make load-experiment
 | Target | 의미 |
 | --- | --- |
 | `make produce-high-load` | generator만 높은 EPS로 실행 |
-| `make load-snapshot` | 현재 Flink job, vertex, lag, topic count를 한 번 출력 |
+| `make load-snapshot` | 현재 Flink job, vertex, lag, 보존 레코드 추정치를 한 번 출력 |
 | `make load-experiment-small` | 60초 동안 중간 부하를 주고 20초마다 snapshot 출력 |
 | `make load-experiment` | 180초 동안 높은 부하를 주고 30초마다 snapshot 출력 |
 
@@ -70,7 +70,7 @@ make load-experiment
 - Kafka partition 수와 Flink parallelism을 함께 봅니다.
 - source 처리량만 보지 말고 sink commit, checkpoint, window operator를 같이 봅니다.
 - `EXACTLY_ONCE` 모드는 transaction/checkpoint 비용 때문에 같은 부하에서 더 늦게 보일 수 있습니다.
-- 로컬 Docker 단일 broker 결과를 production capacity로 일반화하지 않습니다.
+- 로컬 Docker 단일 broker 결과를 실제 용량 계획에 일반화하지 않습니다.
 - 운영에서는 Flink metric reporter, Kafka broker metric, end-to-end latency metric을 함께 둡니다.
 
 ## 정리

@@ -16,6 +16,10 @@ flink-sql/country_category_merchant_aggregate.sql
 
 이 SQL은 `transactions.raw`를 읽어서 `transactions.aggregates.sql`에 1분 window 집계를 씁니다.
 
+현재 Compose에는 SQL Client 실행 service와 connector JAR 설치를 포함하지 않습니다.
+따라서 이 파일은 DataStream 구현과 표현 방식을 비교하는 예제이며, 기본 `make up`에서
+자동 실행되지 않습니다.
+
 ## 비교 포인트
 
 | 관점 | DataStream API | Flink SQL |
@@ -23,6 +27,7 @@ flink-sql/country_category_merchant_aggregate.sql
 | 복잡한 알람 rule | Java test와 함께 관리하기 좋음 | UDF가 필요할 수 있음 |
 | window 집계 | 코드가 길어짐 | SQL이 간결함 |
 | DLQ/side output | 표현력이 좋음 | 별도 설계가 필요함 |
+| 잘못된 JSON | source 좌표를 보존해 DLQ 기록 | 현재 예제는 `json.ignore-parse-errors=true`로 건너뜀 |
 | 데이터 분석가 협업 | 진입 장벽 있음 | 상대적으로 쉬움 |
 
 ## 실무 적용 팁
@@ -30,3 +35,5 @@ flink-sql/country_category_merchant_aggregate.sql
 - 반복적인 집계는 SQL로 시작해도 좋습니다.
 - 장애 처리, replay, custom validation이 중요하면 DataStream API를 고려합니다.
 - SQL도 version control과 review 대상이어야 합니다.
+- 운영 경로로 사용할 때는 parse error를 조용히 버리지 않도록 별도 raw validation/DLQ
+  파이프라인을 설계합니다.

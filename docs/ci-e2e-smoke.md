@@ -13,7 +13,7 @@
 - Flink JobManager/TaskManager 시작
 - Flink job 제출과 `RUNNING` 상태 확인
 - generator로 `transactions.raw` 이벤트 발행
-- API health 확인
+- API health와 Compose readiness 확인
 - `alerts.fraud` 메시지 생성 확인
 - `transactions.aggregates` 메시지 생성 확인
 - `transactions.dlq` 메시지 생성 확인
@@ -51,6 +51,10 @@ make ci-smoke-exactly-once
 CI_GENERATOR_RUN_SECONDS=60 CI_GENERATOR_EVENTS_PER_SECOND=50 make ci-smoke
 ```
 
+E2E 이전 job에서는 Java `mvn verify`, API/Python unit test, Compose 전체 profile
+렌더링, Prometheus rule 검사, JSON/shell 구문 검사, 세 Kustomize overlay 렌더링을 먼저
+수행합니다. E2E는 이 정적·단위 검증이 통과한 뒤에만 시작합니다.
+
 ## 실패 시 확인할 것
 
 `scripts/ci-e2e-smoke.sh`는 실패하면 자동으로 `docker compose ps`와 주요 서비스 로그를 출력하고 compose 환경을 정리합니다.
@@ -64,4 +68,5 @@ CI_GENERATOR_RUN_SECONDS=60 CI_GENERATOR_EVENTS_PER_SECOND=50 make ci-smoke
 
 ## 실무 적용 포인트
 
-이 테스트는 production 전체 검증이 아니라 PR 단위의 빠른 회귀 검증입니다. 실무에서는 여기에 schema compatibility check, connector smoke, metric assertion, 배포 후 canary check를 추가하는 것이 좋습니다.
+이 테스트는 PR 단위의 핵심 경로 회귀 검증입니다. 성능, 장시간 state 복구, 보안,
+schema compatibility, connector upgrade, 배포 후 canary까지 보장하지 않습니다.

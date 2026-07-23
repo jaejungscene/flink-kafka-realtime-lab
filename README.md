@@ -1,6 +1,7 @@
-# Flink Kafka(KRaft) 실시간 스트리밍 랩
+# Flink·Kafka KRaft 실시간 이상 결제 탐지 랩
 
-Kafka KRaft와 Apache Flink로 실시간 집계, 알람 판단, DLQ, replay, late event 처리를 학습하고 실무 설계에 참고할 수 있도록 만든 저장소입니다.
+Kafka KRaft와 Apache Flink로 결제 이벤트를 처리하며 event time, 실시간 집계,
+위험 알람, DLQ, 안전한 replay를 실험하는 프로젝트입니다.
 
 이 프로젝트는 ML fraud score가 포함된 결제 이벤트를 Kafka로 수집하고, Flink가 event-time 기준으로 사용자/가맹점/국가별 실시간 판단을 수행한 뒤 Kafka topic으로 결과를 발행합니다.
 
@@ -10,17 +11,17 @@ Kafka KRaft와 Apache Flink로 실시간 집계, 알람 판단, DLQ, replay, lat
 
 | 구성 요소 | 버전 | 선택 이유 |
 | --- | --- | --- |
-| Kafka | `apache/kafka:4.1.2` | KRaft-only 전환 이후 안정화된 4.1 patch 계열 |
-| Flink | `2.1.2` | 신규 학습/신규 구축에 적합한 2.x 계열 |
+| Kafka | `apache/kafka:4.1.2` | KRaft-only 4.x 동작을 고정된 환경에서 재현 |
+| Flink | `2.1.2` | Flink 2.x DataStream API와 runtime 사용 |
 | Flink Kafka connector | `4.0.1-2.0` | Flink 2.x connector 계열 |
-| Java | `17` | Flink 2.x 실무 기본값으로 적합 |
+| Java | `17` | build와 runtime 기준을 동일하게 고정 |
 
 ## 아키텍처
 
 ```mermaid
 flowchart LR
     G["이벤트 Generator"] -->|transactions.raw| K["Kafka KRaft"]
-    R["DLQ Replayer"] -->|transactions.replay| K
+    R["검증된 DLQ Replayer"] -->|transactions.replay| K
     K --> F["Flink 2.1 Streaming Job"]
     F -->|alerts.fraud| K
     F -->|transactions.aggregates| K
@@ -40,13 +41,24 @@ flowchart LR
 - `MERCHANT_ANOMALY`: 가맹점별 1분 거래량/금액/평균 위험도 알람
 - `COUNTRY_CATEGORY_1M`: 국가/카테고리/가맹점 기준 1분 실시간 집계
 - `transactions.dlq`: 파싱 실패, 검증 실패, late event 격리
-- `transactions.replay`: DLQ 보정 후 재처리 topic
+- `transactions.replay`: 안전성 검사를 통과한 DLQ 이벤트의 재처리 topic
 - `merchant_risk_profiles`: PostgreSQL CDC 기반 가맹점 risk profile을 Flink Broadcast State로 join
 - Schema Registry: Avro schema contract와 evolution 학습
-- Observability: topic message count, DLQ, alert, consumer lag 관측
+- Observability: topic별 보존 레코드 추정치, DLQ, alert, consumer lag 관측
 - Load/backpressure: 부하 증가, lag, Flink backpressure 관측
 - Failure recovery: TaskManager 장애, Kafka 재시작, savepoint 실습
 - Flink SQL: 동일 집계 요구사항을 SQL로 표현한 비교 예제
+
+## 설계에서 해결한 문제
+
+| 문제 | 적용한 설계 |
+| --- | --- |
+| 역직렬화 실패가 job 전체 장애로 번짐 | Kafka envelope를 보존한 뒤 Flink parser와 side output에서 DLQ 분리 |
+| late/replay event의 출처를 추적하기 어려움 | source topic/partition/offset과 replay run metadata 보존 |
+| 유휴 partition 때문에 watermark가 멈춤 | bounded out-of-orderness와 source idleness 설정 |
+| CDC reference 변경과 삭제 반영 | compacted topic + Broadcast State + Debezium delete rewrite |
+| 재처리 대상이 실행 시점에 바뀜 | preview에서 선택한 exact offset, 동일 run ID, 명시적 confirm 요구 |
+| 장애 시 sink 중복 가능성 비교 | at-least-once와 Kafka transactional exactly-once 실행 경로 분리 |
 
 ## 먼저 읽기
 
@@ -66,6 +78,9 @@ flowchart LR
 ## 빠른 시작: Docker Compose
 
 사전 조건: Docker Desktop 또는 OrbStack이 실행 중이어야 합니다.
+
+공유 환경에서 비밀번호나 API token을 바꾸려면 `.env.example`을 복사해 `.env`를
+만드십시오. 로컬 기본값만 사용할 때는 생략할 수 있습니다.
 
 ```bash
 make build
@@ -147,6 +162,7 @@ Kubernetes manifests는 `k8s/` 아래에 있으며 Strimzi Kafka와 Flink Kubern
 ```bash
 kubectl kustomize k8s/overlays/dev
 kubectl kustomize k8s/overlays/prod-like
+kubectl kustomize k8s/overlays/exactly-once
 ```
 
 Operator 사전 조건, image naming, 배포 순서는 [Kubernetes 가이드](docs/kubernetes-guide.md)를 참고하세요.
@@ -174,7 +190,7 @@ Operator 사전 조건, image naming, 배포 순서는 [Kubernetes 가이드](do
 ├── generator/       # synthetic transaction producer
 ├── k8s/             # Strimzi + Flink Operator manifests
 ├── observability/   # Prometheus/Grafana starter dashboard
-├── replayer/        # DLQ to replay topic helper
+├── replayer/        # 검증된 DLQ event를 replay topic으로 발행하는 도구
 ├── schemas/         # Avro schema contract 예제
 ├── scripts/         # topic 생성, smoke test, 부하/백프레셔 관측 helper
 └── docker-compose.yml
@@ -184,11 +200,11 @@ Operator 사전 조건, image naming, 배포 순서는 [Kubernetes 가이드](do
 
 ```bash
 make test
-docker compose config
+make test-python
+docker compose --profile schema --profile cdc --profile observability config
 make ci-smoke
 make ci-smoke-exactly-once
 python3 -m py_compile api/src/main.py common/python/realtime_lab/dlq_tools.py generator/src/producer.py replayer/src/replay_dlq.py
-PYTHONPATH=api:common/python python3 -m unittest discover -s api/tests
 kubectl kustomize k8s/overlays/dev
 kubectl kustomize k8s/overlays/prod-like
 kubectl kustomize k8s/overlays/exactly-once
@@ -196,4 +212,7 @@ kubectl kustomize k8s/overlays/exactly-once
 
 ## 운영 적용 시 주의점
 
-이 저장소는 실행 가능한 lab이지만 그대로 복사해 운영 platform으로 쓰기 위한 완성본은 아닙니다. 운영에서는 local checkpoint storage를 durable storage로 바꾸고, authentication/TLS, Kafka/Flink durable storage, SLO 알람, schema governance를 추가해야 합니다. 이 프로젝트는 local lab이 실제 시스템으로 확장될 때 무엇이 달라져야 하는지 학습할 수 있도록 그 차이를 명시합니다.
+이 저장소는 실행 가능한 학습·검증 환경이며 production platform 배포본은 아닙니다.
+Compose checkpoint는 named volume에 남지만 단일 Docker host 장애를 견디지 못합니다.
+실제 배포에서는 Kafka 인증/TLS와 고가용성, 원격 checkpoint storage, secret manager,
+NetworkPolicy, schema compatibility gate, SLO와 alert routing을 별도로 설계해야 합니다.

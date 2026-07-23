@@ -15,6 +15,7 @@ make smoke
 docker compose ps
 curl http://localhost:8081/jobs
 curl http://localhost:8000/health
+curl http://localhost:8000/ready
 make topics
 make lag
 make load-snapshot
@@ -61,7 +62,7 @@ curl http://localhost:8083/connectors
 ### Consumer lag 증가
 
 - `make lag`를 실행합니다.
-- `make load-snapshot`으로 Flink vertex 상태와 topic별 message count를 함께 확인합니다.
+- `make load-snapshot`으로 Flink vertex 상태와 topic별 보존 레코드 추정치를 함께 확인합니다.
 - Flink parallelism을 늘리기 전에 Kafka partition 수를 먼저 확인합니다.
 - Flink UI에서 backpressure와 checkpoint failure를 확인합니다.
 
@@ -77,6 +78,8 @@ curl http://localhost:8083/connectors
 - `make dlq-summary`로 `reason`과 `errorType` 분포를 확인합니다.
 - `make dlq-replay-preview`로 replay 가능한 offset만 먼저 확인합니다.
 - `make dlq-replay-api`는 작은 `max_messages`부터 실행합니다.
+- `LATE_EVENT`와 `REFERENCE_DATA_PARSE_ERROR`, 의미를 추론해야 하는 잘못된 값은 자동
+  replay하지 않고 별도 backfill/remediation으로 처리합니다.
 - `REFERENCE_DATA_PARSE_ERROR`는 CDC profile payload가 기대 형식과 다른 경우입니다.
 - `make replay-dlq`는 API가 아닌 별도 tool container로 replay할 때 사용합니다.
 - Replay record에는 `replayId`, `replayRunId`, `replaySourceTopic`, `replaySourcePartition`, `replaySourceOffset` metadata가 추가됩니다.
@@ -117,3 +120,5 @@ curl http://localhost:8083/connectors
 - Replay 권한과 audit trail을 정의합니다.
 - Kafka lag, Flink checkpoint failure, backpressure, restart count, end-to-end latency를 모니터링합니다.
 - CDC reference data join은 profile 변경 시점, TTL, schema evolution 정책까지 함께 설계합니다.
+- API에는 `API_TOKEN`, ingress 인증/인가, replay audit와 source offset dedup 저장소를
+  연결합니다.

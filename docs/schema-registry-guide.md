@@ -1,6 +1,7 @@
 # Schema Registry 가이드
 
-이 프로젝트의 기본 실행은 JSON입니다. Schema Registry 예제는 실무에서 자주 필요한 schema contract와 schema evolution을 학습하기 위한 선택 실행 경로입니다.
+이 프로젝트의 기본 실행은 JSON입니다. Schema Registry profile은 topic별 Avro contract를
+등록하고 evolution 규칙을 검토하기 위한 선택 경로입니다.
 
 ## 왜 추가했나
 
@@ -41,6 +42,8 @@ curl http://localhost:8085/subjects/transactions.raw-value/versions/latest
 
 ## 현재 범위
 
-현재 Flink job은 JSON을 계속 읽고 씁니다. Avro serialization까지 연결하지 않은 이유는 학습자가 먼저 Kafka/Flink 흐름을 이해한 뒤 schema governance를 별도 주제로 실험할 수 있게 하기 위해서입니다.
+현재 Flink job과 generator는 JSON을 계속 읽고 씁니다. 따라서 schema를 등록했다는
+사실만으로 실제 Kafka payload가 Avro 검증을 받는 것은 아닙니다. Producer/consumer에
+Avro serializer를 연결하기 전까지는 문서화된 contract와 compatibility 실험 범위입니다.
 
 Schema 등록은 `scripts/register_schemas.py`가 Python JSON encoder로 payload를 만들어 수행합니다. shell string escape로 schema JSON을 조립하지 않기 때문에 field가 늘어나도 깨질 가능성이 낮습니다.

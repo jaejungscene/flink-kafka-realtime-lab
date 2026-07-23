@@ -18,19 +18,27 @@ make load-snapshot
 | Prometheus | http://localhost:9090 |
 | Grafana | http://localhost:3000 |
 
-Grafana 기본 계정은 `admin/admin`입니다.
+로컬 기본 계정은 `admin/admin`입니다. 공유 환경에서는 `.env`의
+`GRAFANA_ADMIN_PASSWORD`를 반드시 바꾸십시오.
 
 ## 제공 metric
 
-FastAPI의 `/metrics` endpoint가 Kafka topic offset을 읽어 Prometheus 형식으로 노출합니다.
+FastAPI의 `/metrics` endpoint가 Kafka offset을 읽어 Prometheus 형식으로 노출합니다.
+Kafka 조회 부하를 줄이기 위해 결과를 기본 10초 동안 cache합니다.
 
 | Metric | 의미 |
 | --- | --- |
-| `realtime_lab_up` | API scrape 가능 여부 |
+| `realtime_lab_up` | API process가 metric 응답을 만들 수 있는지 여부 |
+| `realtime_lab_kafka_up` | Kafka metadata/offset 수집 성공 여부 |
 | `realtime_lab_kafka_topic_available` | topic 존재 여부 |
-| `realtime_lab_kafka_topic_messages` | partition별 대략적인 message 수 |
-| `realtime_lab_kafka_topic_messages_total` | topic별 대략적인 message 수 |
+| `realtime_lab_kafka_topic_retained_records` | partition의 `high-low` offset 차이 |
+| `realtime_lab_kafka_topic_retained_records_total` | topic별 `high-low` 합계 |
+| `realtime_lab_kafka_topic_log_end_offset` | partition log end offset |
 | `realtime_lab_kafka_consumer_lag` | `flink-realtime-lab` group의 partition별 lag |
+| `realtime_lab_metrics_partition_errors` | offset 조회에 실패한 partition 수 |
+
+`retained_records`는 정확한 메시지 개수가 아닙니다. 삭제·압축으로 offset 사이에 빈
+구간이 생길 수 있으므로 추세와 대략적인 backlog 크기를 보는 용도로만 사용합니다.
 
 ## 운영에서 봐야 할 질문
 
@@ -47,6 +55,10 @@ make load-experiment-small
 ```
 
 자세한 해석 기준은 [부하/백프레셔 실험 가이드](load-backpressure-guide.md)를 참고합니다.
+
+Prometheus rule은 Kafka metric 수집 실패, consumer lag, partition offset 수집 오류를
+감지합니다. 예제 threshold는 lab 부하에 맞춘 값이므로 실제 SLO로 그대로 사용하지
+않습니다.
 
 ## 실무 확장
 
