@@ -11,6 +11,10 @@ spec:
         app: realtime-lab-generator
     spec:
       restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: generator
           image: realtime-lab-generator:1.0.0
@@ -23,3 +27,16 @@ spec:
               value: "25"
             - name: RUN_SECONDS
               value: "120"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL

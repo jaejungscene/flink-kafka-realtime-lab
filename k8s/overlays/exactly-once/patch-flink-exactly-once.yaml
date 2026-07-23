@@ -32,3 +32,11 @@ spec:
       - "10"
       - --allowedLatenessSeconds
       - "30"
+      - --sourceIdleTimeoutSeconds
+      - "30"
+      - --maxFutureSkewSeconds
+      - "300"
+      - --sourceStartupMode
+      - LATEST
+      - --transactionalIdPrefix
+      - realtime-lab-k8s-exactly-once

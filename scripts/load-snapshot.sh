@@ -9,8 +9,8 @@ echo "== realtime lab load snapshot =="
 date -u +"timestamp_utc=%Y-%m-%dT%H:%M:%SZ"
 
 echo
-echo "== api health =="
-curl -fsS "${API_URL}/health"
+echo "== api readiness =="
+curl -fsS "${API_URL}/ready"
 echo
 
 echo
@@ -117,7 +117,7 @@ curl -fsS "${API_URL}/metrics" \
 import re
 import sys
 
-topic_total = re.compile(r"realtime_lab_kafka_topic_messages_total\{topic=\"([^\"]+)\"\} ([0-9.]+)")
+topic_total = re.compile(r"realtime_lab_kafka_topic_retained_records_total\{topic=\"([^\"]+)\"\} ([0-9.]+)")
 lag = re.compile(r"realtime_lab_kafka_consumer_lag\{group=\"([^\"]+)\",topic=\"([^\"]+)\",partition=\"([^\"]+)\"\} ([0-9.]+)")
 
 topic_rows = []
@@ -132,7 +132,7 @@ for line in sys.stdin:
         lag_rows.append((lag_match.group(2), lag_match.group(3), float(lag_match.group(4))))
 
 for topic, count in sorted(topic_rows):
-    print(f"topic_total {topic} {count:.0f}")
+    print(f"retained_records {topic} {count:.0f}")
 
 if lag_rows:
     for topic, partition, value in sorted(lag_rows):

@@ -45,15 +45,26 @@ services:
     ports:
       - "8081:8081"
     command: jobmanager
+    healthcheck:
+      test: [ "CMD-SHELL", "flink list -m localhost:8081 >/dev/null 2>&1" ]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 10s
     environment:
       FLINK_PROPERTIES: |
         jobmanager.rpc.address: flink-jobmanager
         state.backend.type: hashmap
+        execution.checkpointing.dir: file:///opt/flink/state/checkpoints
+        execution.checkpointing.savepoint-dir: file:///opt/flink/state/savepoints
         execution.checkpointing.interval: 10000
         execution.checkpointing.mode: ${FLINK_CHECKPOINTING_MODE:-AT_LEAST_ONCE}
+        execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
         restart-strategy.type: fixed-delay
         restart-strategy.fixed-delay.attempts: 3
         restart-strategy.fixed-delay.delay: 10 s
+    volumes:
+      - flink-state:/opt/flink/state
 
   flink-taskmanager:
     build:
@@ -61,7 +72,7 @@ services:
       target: runtime
     depends_on:
       flink-jobmanager:
-        condition: service_started
+        condition: service_healthy
     command: taskmanager
     scale: 1
     environment:
@@ -69,11 +80,16 @@ services:
         jobmanager.rpc.address: flink-jobmanager
         taskmanager.numberOfTaskSlots: 4
         state.backend.type: hashmap
+        execution.checkpointing.dir: file:///opt/flink/state/checkpoints
+        execution.checkpointing.savepoint-dir: file:///opt/flink/state/savepoints
         execution.checkpointing.interval: 10000
         execution.checkpointing.mode: ${FLINK_CHECKPOINTING_MODE:-AT_LEAST_ONCE}
+        execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
         restart-strategy.type: fixed-delay
         restart-strategy.fixed-delay.attempts: 3
         restart-strategy.fixed-delay.delay: 10 s
+    volumes:
+      - flink-state:/opt/flink/state
 
   flink-submit:
     build:
@@ -81,31 +97,45 @@ services:
       target: runtime
     depends_on:
       flink-jobmanager:
-        condition: service_started
+        condition: service_healthy
       flink-taskmanager:
         condition: service_started
       topic-init:
         condition: service_completed_successfully
     command:
-      - /bin/bash
-      - -lc
-      - |
-        sleep 8
-        flink run -d \
-          -m flink-jobmanager:8081 \
-          /opt/flink/usrlib/realtime-lab-flink-job.jar \
-          --bootstrapServers kafka:9092 \
-          --rawTopic transactions.raw \
-          --replayTopic transactions.replay \
-          --merchantRiskProfileTopic merchant_risk_profiles \
-          --alertTopic alerts.fraud \
-          --aggregateTopic transactions.aggregates \
-          --dlqTopic transactions.dlq \
-          --consumerGroup flink-realtime-lab \
-          --sinkDeliveryGuarantee ${SINK_DELIVERY_GUARANTEE:-AT_LEAST_ONCE} \
-          --checkpointIntervalMillis 10000 \
-          --watermarkDelaySeconds 10 \
-          --allowedLatenessSeconds 30
+      - /opt/flink/bin/submit-job.sh
+      - --bootstrapServers
+      - kafka:9092
+      - --rawTopic
+      - transactions.raw
+      - --replayTopic
+      - transactions.replay
+      - --merchantRiskProfileTopic
+      - merchant_risk_profiles
+      - --alertTopic
+      - alerts.fraud
+      - --aggregateTopic
+      - transactions.aggregates
+      - --dlqTopic
+      - transactions.dlq
+      - --consumerGroup
+      - flink-realtime-lab
+      - --sinkDeliveryGuarantee
+      - ${SINK_DELIVERY_GUARANTEE:-AT_LEAST_ONCE}
+      - --checkpointIntervalMillis
+      - "10000"
+      - --watermarkDelaySeconds
+      - "10"
+      - --allowedLatenessSeconds
+      - "30"
+      - --sourceIdleTimeoutSeconds
+      - "30"
+      - --maxFutureSkewSeconds
+      - "300"
+      - --sourceStartupMode
+      - LATEST
+      - --transactionalIdPrefix
+      - realtime-lab-compose
     restart: "no"
 
   generator:
@@ -135,6 +165,9 @@ services:
       DLQ_TOPIC: transactions.dlq
       REPLAY_TOPIC: transactions.replay
       MAX_MESSAGES: 50
+      KAFKA_ISOLATION_LEVEL: ${KAFKA_ISOLATION_LEVEL:-read_uncommitted}
+      REPLAYER_GROUP_ID: ${REPLAYER_GROUP_ID:-realtime-lab-replayer}
+      REPLAY_RUN_ID: ${REPLAY_RUN_ID:-replay-run-local}
 
   api:
     build:
@@ -150,6 +183,14 @@ services:
       KAFKA_ISOLATION_LEVEL: ${KAFKA_ISOLATION_LEVEL:-read_uncommitted}
       DLQ_TOPIC: transactions.dlq
       REPLAY_TOPIC: transactions.replay
+      METRICS_CACHE_SECONDS: 10
+      API_TOKEN: ${API_TOKEN:-}
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready', timeout=3)" ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
 
   kafka-ui:
     image: provectuslabs/kafka-ui:v0.7.2
@@ -197,7 +238,7 @@ services:
     environment:
       POSTGRES_DB: realtime_lab
       POSTGRES_USER: lab
-      POSTGRES_PASSWORD: lab
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lab}
     volumes:
       - ./cdc/postgres-init:/docker-entrypoint-initdb.d:ro
 
@@ -225,6 +266,10 @@ services:
       KEY_CONVERTER_SCHEMAS_ENABLE: "false"
       VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
       CONNECT_REST_ADVERTISED_HOST_NAME: kafka-connect
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lab}
+      CONNECT_CONFIG_PROVIDERS: env
+      CONNECT_CONFIG_PROVIDERS_ENV_CLASS: org.apache.kafka.common.config.provider.EnvVarConfigProvider
+      CONNECT_CONFIG_PROVIDERS_ENV_PARAM_ALLOWLIST_PATTERN: ^POSTGRES_PASSWORD$
 
   cdc-init:
     image: curlimages/curl:8.11.1
@@ -245,6 +290,7 @@ services:
       - "9090:9090"
     volumes:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
 
   grafana:
     image: grafana/grafana:12.1.1
@@ -255,7 +301,10 @@ services:
       - "3000:3000"
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
     volumes:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+
+volumes:
+  flink-state:

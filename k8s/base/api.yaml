@@ -13,6 +13,11 @@ spec:
       labels:
         app: realtime-lab-api
     spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
       containers:
         - name: api
           image: realtime-lab-api:1.0.0
@@ -20,14 +25,41 @@ spec:
           envFrom:
             - configMapRef:
                 name: realtime-lab-config
+          env:
+            - name: API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: realtime-lab-api-secrets
+                  key: api-token
+                  optional: true
           ports:
             - containerPort: 8000
-          readinessProbe:
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          livenessProbe:
             httpGet:
               path: /health
               port: 8000
             initialDelaySeconds: 5
             periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 4
 ---
 apiVersion: v1
 kind: Service

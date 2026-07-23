@@ -36,12 +36,12 @@
       },
       "targets": [
         {
-          "expr": "sum by (topic) (realtime_lab_kafka_topic_messages_total)",
+          "expr": "sum by (topic) (realtime_lab_kafka_topic_retained_records_total)",
           "legendFormat": "{{topic}}",
           "refId": "A"
         }
       ],
-      "title": "Topic별 메시지 수",
+      "title": "Topic별 보존 레코드 추정치",
       "type": "timeseries"
     },
     {
@@ -129,18 +129,71 @@
       },
       "targets": [
         {
-          "expr": "sum(realtime_lab_kafka_topic_messages_total{topic=\"transactions.dlq\"})",
+          "expr": "sum(realtime_lab_kafka_topic_retained_records_total{topic=\"transactions.dlq\"})",
           "legendFormat": "DLQ",
           "refId": "A"
         },
         {
-          "expr": "sum(realtime_lab_kafka_topic_messages_total{topic=\"alerts.fraud\"})",
+          "expr": "sum(realtime_lab_kafka_topic_retained_records_total{topic=\"alerts.fraud\"})",
           "legendFormat": "alerts",
           "refId": "B"
         }
       ],
-      "title": "DLQ와 알람 누적량",
+      "title": "DLQ와 알람 보존 레코드 추정치",
       "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "id": 4,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "realtime_lab_kafka_up",
+          "legendFormat": "Kafka metrics",
+          "refId": "A"
+        }
+      ],
+      "title": "Kafka 메트릭 수집 상태",
+      "type": "stat"
     }
   ],
   "refresh": "10s",

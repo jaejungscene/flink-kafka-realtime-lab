@@ -13,3 +13,4 @@ data:
   KAFKA_ISOLATION_LEVEL: read_uncommitted
   METRIC_TOPICS: transactions.raw,transactions.replay,transactions.aggregates,alerts.fraud,transactions.dlq,merchant_risk_profiles
   FLINK_CONSUMER_GROUP: flink-realtime-lab
+  METRICS_CACHE_SECONDS: "10"

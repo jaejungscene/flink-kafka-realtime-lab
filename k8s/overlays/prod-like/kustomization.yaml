@@ -2,6 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../base
+  - api-pdb.yaml
 patches:
   - path: patch-kafka-prod-like.yaml
     target:
@@ -15,4 +16,8 @@ patches:
     target:
       kind: FlinkDeployment
       name: realtime-lab-flink
+  - path: patch-api-prod-like.yaml
+    target:
+      kind: Deployment
+      name: realtime-lab-api
   - path: patch-topics-prod-like.yaml
