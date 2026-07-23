@@ -5,11 +5,15 @@ RUN mvn -q -DskipTests dependency:go-offline
 
 FROM deps AS test
 COPY src ./src
-RUN mvn test
+RUN mvn -B -ntp verify
 
 FROM deps AS build
 COPY src ./src
 RUN mvn -q -DskipTests package
 
 FROM flink:2.1.2-scala_2.12-java17 AS runtime
-COPY --from=build /workspace/target/realtime-lab-flink-job-1.0.0.jar /opt/flink/usrlib/realtime-lab-flink-job.jar
+COPY --chown=flink:flink --from=build /workspace/target/realtime-lab-flink-job-1.0.0.jar /opt/flink/usrlib/realtime-lab-flink-job.jar
+COPY --chown=flink:flink docker/submit-job.sh /opt/flink/bin/submit-job.sh
+RUN chmod 0755 /opt/flink/bin/submit-job.sh \
+    && mkdir -p /opt/flink/state/checkpoints /opt/flink/state/savepoints \
+    && chown -R flink:flink /opt/flink/state

@@ -1,0 +1,511 @@
+package io.github.jaejungscene.realtimelab.job;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.jaejungscene.realtimelab.config.JobConfig;
+import io.github.jaejungscene.realtimelab.model.AggregateEvent;
+import io.github.jaejungscene.realtimelab.model.AlertEvent;
+import io.github.jaejungscene.realtimelab.model.DlqEvent;
+import io.github.jaejungscene.realtimelab.model.KafkaRecord;
+import io.github.jaejungscene.realtimelab.model.MerchantRiskProfile;
+import io.github.jaejungscene.realtimelab.model.TransactionEvent;
+import io.github.jaejungscene.realtimelab.rule.RiskRules;
+import io.github.jaejungscene.realtimelab.serde.KafkaEnvelopeDeserializationSchema;
+import io.github.jaejungscene.realtimelab.serde.ObjectMapperFactory;
+import io.github.jaejungscene.realtimelab.sink.KafkaSinkFactory;
+import org.apache.flink.api.common.eventtime.WatermarkStrategy;
+import org.apache.flink.api.common.functions.AggregateFunction;
+import org.apache.flink.api.common.functions.FilterFunction;
+import org.apache.flink.api.common.functions.MapFunction;
+import org.apache.flink.api.common.state.BroadcastState;
+import org.apache.flink.api.common.state.MapStateDescriptor;
+import org.apache.flink.api.common.state.ReadOnlyBroadcastState;
+import org.apache.flink.connector.kafka.sink.KafkaSink;
+import org.apache.flink.connector.kafka.source.KafkaSource;
+import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
+import org.apache.flink.streaming.api.datastream.BroadcastStream;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.ProcessFunction;
+import org.apache.flink.streaming.api.functions.co.BroadcastProcessFunction;
+import org.apache.flink.streaming.api.functions.windowing.ProcessWindowFunction;
+import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
+import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
+import org.apache.flink.util.Collector;
+import org.apache.flink.util.OutputTag;
+
+import java.io.Serializable;
+import java.time.Duration;
+import java.util.List;
+import java.util.Locale;
+
+public class RealTimeAlertJob {
+    private static final OutputTag<DlqEvent> DLQ_TAG = new OutputTag<>("dlq") {
+    };
+    private static final OutputTag<TransactionEvent> LATE_EVENT_TAG = new OutputTag<>("late-events") {
+    };
+
+    public static void main(String[] args) throws Exception {
+        JobConfig config = JobConfig.fromArgs(args);
+        String rawTopic = config.rawTopic();
+        String replayTopic = config.replayTopic();
+        String merchantRiskProfileTopic = config.merchantRiskProfileTopic();
+        String alertTopic = config.alertTopic();
+        String aggregateTopic = config.aggregateTopic();
+        String dlqTopic = config.dlqTopic();
+        Duration allowedLateness = config.allowedLateness();
+
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.enableCheckpointing(config.checkpointIntervalMillis());
+
+        KafkaSource<KafkaRecord> rawSource = KafkaSource.<KafkaRecord>builder()
+                .setBootstrapServers(config.bootstrapServers())
+                .setTopics(List.of(rawTopic, replayTopic))
+                .setGroupId(config.consumerGroup())
+                .setStartingOffsets(sourceOffsets(config.sourceStartupMode()))
+                .setDeserializer(new KafkaEnvelopeDeserializationSchema())
+                .build();
+
+        KafkaSource<KafkaRecord> merchantProfileSource = KafkaSource.<KafkaRecord>builder()
+                .setBootstrapServers(config.bootstrapServers())
+                .setTopics(merchantRiskProfileTopic)
+                .setGroupId(config.consumerGroup() + "-merchant-profiles")
+                .setStartingOffsets(OffsetsInitializer.earliest())
+                .setDeserializer(new KafkaEnvelopeDeserializationSchema())
+                .build();
+
+        SingleOutputStreamOperator<TransactionEvent> parsedEvents = env
+                .fromSource(rawSource, WatermarkStrategy.noWatermarks(), "transactions-source")
+                .process(new TransactionParser(DLQ_TAG, replayTopic, config.maxFutureSkew()))
+                .name("parse-transactions");
+
+        SingleOutputStreamOperator<MerchantRiskProfile> merchantProfiles = env
+                .fromSource(merchantProfileSource, WatermarkStrategy.noWatermarks(), "merchant-profile-source")
+                .process(new MerchantRiskProfileParser(DLQ_TAG))
+                .name("parse-merchant-profiles");
+
+        MapStateDescriptor<String, MerchantRiskProfile> merchantProfileState = merchantProfileStateDescriptor();
+        BroadcastStream<MerchantRiskProfile> merchantProfileBroadcast =
+                merchantProfiles.broadcast(merchantProfileState);
+
+        SingleOutputStreamOperator<TransactionEvent> enrichedEvents = parsedEvents
+                .connect(merchantProfileBroadcast)
+                .process(new MerchantRiskProfileEnrichmentFunction(merchantProfileState))
+                .name("enrich-with-merchant-risk-profiles");
+
+        SingleOutputStreamOperator<TransactionEvent> events = enrichedEvents
+                .assignTimestampsAndWatermarks(
+                        WatermarkStrategy
+                                .<TransactionEvent>forBoundedOutOfOrderness(config.watermarkDelay())
+                                .withIdleness(config.sourceIdleTimeout())
+                                .withTimestampAssigner((event, timestamp) -> event.getEventTime()))
+                .process(new LateEventRouter(allowedLateness, rawTopic, replayTopic))
+                .name("event-time-watermarks");
+
+        parsedEvents
+                .getSideOutput(DLQ_TAG)
+                .sinkTo(kafkaSink(config, dlqTopic, dlqKey(), "parse-dlq"))
+                .name("sink-dlq");
+
+        merchantProfiles
+                .getSideOutput(DLQ_TAG)
+                .sinkTo(kafkaSink(config, dlqTopic, dlqKey(), "reference-data-dlq"))
+                .name("sink-profile-dlq");
+
+        events
+                .filter(new HighRiskFilter())
+                .map(new HighRiskAlertMapper())
+                .sinkTo(kafkaSink(config, alertTopic, AlertEvent::getKey, "high-risk-alerts"))
+                .name("sink-high-risk-alerts");
+
+        SingleOutputStreamOperator<AlertEvent> userWindowAlerts = events
+                .keyBy(TransactionEvent::getUserId)
+                .window(TumblingEventTimeWindows.of(Duration.ofMinutes(1)))
+                .allowedLateness(allowedLateness)
+                .sideOutputLateData(LATE_EVENT_TAG)
+                .process(new UserWindowAlertFunction())
+                .name("user-window-alerts");
+
+        userWindowAlerts
+                .sinkTo(kafkaSink(config, alertTopic, AlertEvent::getKey, "user-window-alerts"))
+                .name("sink-user-window-alerts");
+
+        SingleOutputStreamOperator<AggregateEvent> aggregates = events
+                .keyBy(RealTimeAlertJob::aggregateKey)
+                .window(TumblingEventTimeWindows.of(Duration.ofMinutes(1)))
+                .allowedLateness(allowedLateness)
+                .sideOutputLateData(LATE_EVENT_TAG)
+                .aggregate(new TransactionStatsAggregate(), new TransactionAggregateWindowFunction())
+                .name("country-category-merchant-aggregates");
+
+        aggregates
+                .sinkTo(kafkaSink(config, aggregateTopic, AggregateEvent::getKey, "transaction-aggregates"))
+                .name("sink-transaction-aggregates");
+
+        SingleOutputStreamOperator<AlertEvent> merchantAnomalyAlerts = events
+                .keyBy(event -> normalize(event.getMerchantId(), "merchant-unknown"))
+                .window(TumblingEventTimeWindows.of(Duration.ofMinutes(1)))
+                .allowedLateness(allowedLateness)
+                .sideOutputLateData(LATE_EVENT_TAG)
+                .aggregate(new TransactionStatsAggregate(), new MerchantAnomalyWindowFunction())
+                .name("merchant-anomaly-alerts");
+
+        merchantAnomalyAlerts
+                .sinkTo(kafkaSink(config, alertTopic, AlertEvent::getKey, "merchant-anomaly-alerts"))
+                .name("sink-merchant-anomaly-alerts");
+
+        DataStream<DlqEvent> windowLateEvents = userWindowAlerts
+                .getSideOutput(LATE_EVENT_TAG)
+                .union(aggregates.getSideOutput(LATE_EVENT_TAG), merchantAnomalyAlerts.getSideOutput(LATE_EVENT_TAG))
+                .map(new LateEventDlqMapper(rawTopic, replayTopic));
+
+        events
+                .getSideOutput(DLQ_TAG)
+                .union(windowLateEvents)
+                .sinkTo(kafkaSink(config, dlqTopic, dlqKey(), "late-events-dlq"))
+                .name("sink-late-events-dlq");
+
+        env.execute("flink-kraft-realtime-lab");
+    }
+
+    private static String aggregateKey(TransactionEvent event) {
+        String country = normalize(event.getCountry(), "UNKNOWN");
+        String category = normalize(event.getCategory(), "uncategorized");
+        String merchant = normalize(event.getMerchantId(), "merchant-unknown");
+        return country + "|" + category + "|" + merchant;
+    }
+
+    private static String normalize(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private static MapStateDescriptor<String, MerchantRiskProfile> merchantProfileStateDescriptor() {
+        return new MapStateDescriptor<>(
+                "merchant-risk-profiles",
+                String.class,
+                MerchantRiskProfile.class);
+    }
+
+    private static <T> KafkaSink<T> kafkaSink(
+            JobConfig config,
+            String topic,
+            KafkaSinkFactory.KeyExtractor<T> keyExtractor,
+            String transactionalScope) {
+        return KafkaSinkFactory.create(
+                config.bootstrapServers(),
+                topic,
+                keyExtractor,
+                config.sinkDeliveryGuarantee(),
+                config.transactionalIdPrefix(),
+                transactionalScope);
+    }
+
+    private static KafkaSinkFactory.KeyExtractor<DlqEvent> dlqKey() {
+        return event -> normalize(event.getErrorType(), "DLQ");
+    }
+
+    private static OffsetsInitializer sourceOffsets(JobConfig.SourceStartupMode startupMode) {
+        return startupMode == JobConfig.SourceStartupMode.EARLIEST
+                ? OffsetsInitializer.earliest()
+                : OffsetsInitializer.latest();
+    }
+
+    static class LateEventRouter extends ProcessFunction<TransactionEvent, TransactionEvent> {
+        private final long allowedLatenessMillis;
+        private final String rawTopic;
+        private final String replayTopic;
+        private transient ObjectMapper mapper;
+
+        LateEventRouter(Duration allowedLateness, String rawTopic, String replayTopic) {
+            this.allowedLatenessMillis = allowedLateness.toMillis();
+            this.rawTopic = rawTopic;
+            this.replayTopic = replayTopic;
+        }
+
+        @Override
+        public void processElement(
+                TransactionEvent event,
+                Context context,
+                Collector<TransactionEvent> out) throws Exception {
+            long currentWatermark = context.timerService().currentWatermark();
+            if (currentWatermark != Long.MIN_VALUE
+                    && event.getEventTime() + allowedLatenessMillis < currentWatermark) {
+                if (mapper == null) {
+                    mapper = ObjectMapperFactory.create();
+                }
+                context.output(DLQ_TAG, lateEventDlq(event, rawTopic, replayTopic, mapper));
+                return;
+            }
+            out.collect(event);
+        }
+    }
+
+    static class HighRiskFilter implements FilterFunction<TransactionEvent> {
+        @Override
+        public boolean filter(TransactionEvent event) {
+            return RiskRules.isHighRisk(event);
+        }
+    }
+
+    static class HighRiskAlertMapper implements MapFunction<TransactionEvent, AlertEvent> {
+        @Override
+        public AlertEvent map(TransactionEvent event) {
+            String riskTier = normalize(event.getMerchantRiskTier(), "UNKNOWN");
+            double effectiveFraudScore = RiskRules.effectiveFraudScore(event);
+            return AlertEvent.of(
+                    "HIGH_RISK_TRANSACTION",
+                    "CRITICAL",
+                    event.getUserId(),
+                    "single event exceeded fraud rule threshold; merchantRiskTier="
+                            + riskTier
+                            + ", merchantRiskMultiplier="
+                            + String.format(Locale.ROOT, "%.3f", event.getMerchantRiskMultiplier())
+                            + ", effectiveFraudScore="
+                            + String.format(Locale.ROOT, "%.4f", effectiveFraudScore),
+                    event.getEventTime(),
+                    event.getEventTime(),
+                    event.getEventTime(),
+                    "effectiveFraudScore",
+                    effectiveFraudScore,
+                    event.getEventId());
+        }
+    }
+
+    static class UserWindowAlertFunction
+            extends ProcessWindowFunction<TransactionEvent, AlertEvent, String, TimeWindow> {
+        @Override
+        public void process(
+                String userId,
+                Context context,
+                Iterable<TransactionEvent> events,
+                Collector<AlertEvent> out) {
+            long count = 0;
+            double totalAmount = 0.0;
+            String sampleEventId = null;
+
+            for (TransactionEvent event : events) {
+                count++;
+                totalAmount += event.getAmount();
+                if (sampleEventId == null) {
+                    sampleEventId = event.getEventId();
+                }
+            }
+
+            if (RiskRules.isBurst(count, totalAmount)) {
+                boolean amountTriggered = totalAmount >= RiskRules.BURST_AMOUNT_THRESHOLD;
+                String reason = "user window exceeded count or amount threshold; count="
+                        + count
+                        + ", totalAmount="
+                        + String.format(Locale.ROOT, "%.2f", totalAmount);
+
+                out.collect(AlertEvent.of(
+                        "USER_PAYMENT_BURST",
+                        amountTriggered ? "CRITICAL" : "WARN",
+                        userId,
+                        reason,
+                        context.window().getStart(),
+                        context.window().getEnd(),
+                        context.window().getEnd(),
+                        amountTriggered ? "totalAmount" : "eventCount",
+                        amountTriggered ? totalAmount : count,
+                        sampleEventId));
+            }
+        }
+    }
+
+    static class TransactionStats implements Serializable {
+        private long count;
+        private double totalAmount;
+        private double totalFraudScore;
+        private String sampleEventId;
+
+        void add(TransactionEvent event) {
+            count++;
+            totalAmount += event.getAmount();
+            totalFraudScore += RiskRules.effectiveFraudScore(event);
+            if (sampleEventId == null) {
+                sampleEventId = event.getEventId();
+            }
+        }
+
+        TransactionStats merge(TransactionStats other) {
+            count += other.count;
+            totalAmount += other.totalAmount;
+            totalFraudScore += other.totalFraudScore;
+            if (sampleEventId == null) {
+                sampleEventId = other.sampleEventId;
+            }
+            return this;
+        }
+    }
+
+    static class TransactionStatsAggregate
+            implements AggregateFunction<TransactionEvent, TransactionStats, TransactionStats> {
+        @Override
+        public TransactionStats createAccumulator() {
+            return new TransactionStats();
+        }
+
+        @Override
+        public TransactionStats add(TransactionEvent value, TransactionStats accumulator) {
+            accumulator.add(value);
+            return accumulator;
+        }
+
+        @Override
+        public TransactionStats getResult(TransactionStats accumulator) {
+            return accumulator;
+        }
+
+        @Override
+        public TransactionStats merge(TransactionStats a, TransactionStats b) {
+            return a.merge(b);
+        }
+    }
+
+    static class TransactionAggregateWindowFunction
+            extends ProcessWindowFunction<TransactionStats, AggregateEvent, String, TimeWindow> {
+        @Override
+        public void process(
+                String key,
+                Context context,
+                Iterable<TransactionStats> stats,
+                Collector<AggregateEvent> out) {
+            TransactionStats stat = stats.iterator().next();
+            AggregateEvent aggregate = new AggregateEvent();
+            aggregate.setAggregateType("COUNTRY_CATEGORY_1M");
+            aggregate.setKey(key);
+            aggregate.setWindowStart(context.window().getStart());
+            aggregate.setWindowEnd(context.window().getEnd());
+            aggregate.setEventCount(stat.count);
+            aggregate.setTotalAmount(round(stat.totalAmount));
+            aggregate.setAvgAmount(stat.count == 0 ? 0.0 : round(stat.totalAmount / stat.count));
+            aggregate.setAvgFraudScore(stat.count == 0 ? 0.0 : round(stat.totalFraudScore / stat.count));
+            out.collect(aggregate);
+        }
+    }
+
+    static class MerchantAnomalyWindowFunction
+            extends ProcessWindowFunction<TransactionStats, AlertEvent, String, TimeWindow> {
+        @Override
+        public void process(
+                String merchantId,
+                Context context,
+                Iterable<TransactionStats> stats,
+                Collector<AlertEvent> out) {
+            TransactionStats stat = stats.iterator().next();
+            double avgFraudScore = stat.count == 0 ? 0.0 : stat.totalFraudScore / stat.count;
+            if (!RiskRules.isMerchantAnomaly(stat.count, stat.totalAmount, avgFraudScore)) {
+                return;
+            }
+
+            String reason = "merchant window anomaly; count="
+                    + stat.count
+                    + ", totalAmount="
+                    + String.format(Locale.ROOT, "%.2f", stat.totalAmount)
+                    + ", avgFraudScore="
+                    + String.format(Locale.ROOT, "%.4f", avgFraudScore);
+
+            boolean riskTriggered = avgFraudScore >= RiskRules.MERCHANT_AVG_FRAUD_SCORE_THRESHOLD;
+            boolean amountTriggered = stat.totalAmount >= RiskRules.MERCHANT_AMOUNT_THRESHOLD;
+            out.collect(AlertEvent.of(
+                    "MERCHANT_ANOMALY",
+                    riskTriggered ? "CRITICAL" : "WARN",
+                    merchantId,
+                    reason,
+                    context.window().getStart(),
+                    context.window().getEnd(),
+                    context.window().getEnd(),
+                    riskTriggered ? "avgFraudScore" : amountTriggered ? "totalAmount" : "eventCount",
+                    riskTriggered ? avgFraudScore : amountTriggered ? stat.totalAmount : stat.count,
+                    stat.sampleEventId));
+        }
+    }
+
+    static class LateEventDlqMapper implements MapFunction<TransactionEvent, DlqEvent> {
+        private final String rawTopic;
+        private final String replayTopic;
+        private transient ObjectMapper mapper;
+
+        LateEventDlqMapper(String rawTopic, String replayTopic) {
+            this.rawTopic = rawTopic;
+            this.replayTopic = replayTopic;
+        }
+
+        @Override
+        public DlqEvent map(TransactionEvent event) {
+            if (mapper == null) {
+                mapper = ObjectMapperFactory.create();
+            }
+            return lateEventDlq(event, rawTopic, replayTopic, mapper);
+        }
+    }
+
+    static class MerchantRiskProfileEnrichmentFunction
+            extends BroadcastProcessFunction<TransactionEvent, MerchantRiskProfile, TransactionEvent> {
+        private final MapStateDescriptor<String, MerchantRiskProfile> stateDescriptor;
+
+        MerchantRiskProfileEnrichmentFunction(MapStateDescriptor<String, MerchantRiskProfile> stateDescriptor) {
+            this.stateDescriptor = stateDescriptor;
+        }
+
+        @Override
+        public void processElement(
+                TransactionEvent event,
+                ReadOnlyContext context,
+                Collector<TransactionEvent> out) throws Exception {
+            ReadOnlyBroadcastState<String, MerchantRiskProfile> state =
+                    context.getBroadcastState(stateDescriptor);
+            MerchantRiskProfile profile = state.get(normalize(event.getMerchantId(), ""));
+            if (profile != null) {
+                event.setMerchantRiskTier(profile.getRiskTier());
+                event.setMerchantRiskMultiplier(profile.getRiskMultiplier());
+                event.setMerchantManualReviewRequired(profile.isManualReviewRequired());
+            }
+            out.collect(event);
+        }
+
+        @Override
+        public void processBroadcastElement(
+                MerchantRiskProfile profile,
+                Context context,
+                Collector<TransactionEvent> out) throws Exception {
+            BroadcastState<String, MerchantRiskProfile> state = context.getBroadcastState(stateDescriptor);
+            if (profile.isDeleted()) {
+                state.remove(profile.getMerchantId());
+            } else {
+                state.put(profile.getMerchantId(), profile);
+            }
+        }
+    }
+
+    private static DlqEvent lateEventDlq(
+            TransactionEvent event,
+            String rawTopic,
+            String replayTopic,
+            ObjectMapper mapper) {
+        String rawValue = event.getOriginalRawValue();
+        if (rawValue == null || rawValue.isBlank()) {
+            try {
+                rawValue = mapper.writeValueAsString(event);
+            } catch (Exception e) {
+                rawValue = event.getEventId();
+            }
+        }
+        return new DlqEvent(
+                "LATE_EVENT",
+                "event arrived after watermark and allowed lateness",
+                normalize(event.getSourceTopic(), rawTopic),
+                event.getSourcePartition() < 0 ? null : event.getSourcePartition(),
+                event.getSourceOffset() < 0 ? null : event.getSourceOffset(),
+                event.getSourceTimestamp() < 0 ? null : event.getSourceTimestamp(),
+                event.getSourceKey(),
+                replayTopic,
+                rawValue,
+                System.currentTimeMillis());
+    }
+
+    private static double round(double value) {
+        return Math.round(value * 100.0) / 100.0;
+    }
+}
