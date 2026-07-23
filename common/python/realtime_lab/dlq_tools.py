@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import uuid
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
@@ -12,13 +13,20 @@ def now_millis() -> int:
 
 
 def _float_or_none(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
     try:
-        return float(value)
+        parsed = float(value)
     except (TypeError, ValueError):
         return None
+    return parsed if math.isfinite(parsed) else None
 
 
 def _int_or_none(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, float):
+        return int(value) if math.isfinite(value) and value.is_integer() else None
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -32,33 +40,26 @@ def normalize_for_replay(
     source_offset: int,
     replay_run_id: str,
 ) -> dict[str, Any] | None:
-    raw_value = dlq_value.get("rawValue")
-    if not raw_value:
+    event, _ = _replay_candidate(dlq_value)
+    if event is None:
         return None
 
-    try:
-        event = json.loads(raw_value)
-    except json.JSONDecodeError:
-        return None
-
-    amount = _float_or_none(event.get("amount", 0.0))
+    amount = _float_or_none(event.get("amount"))
+    event_time = _int_or_none(event.get("eventTime"))
     ml_fraud_score = _float_or_none(event.get("mlFraudScore", 0.0))
     ip_risk = _int_or_none(event.get("ipRisk", 0))
-    if amount is None or ml_fraud_score is None or ip_risk is None:
+    if amount is None or event_time is None or ml_fraud_score is None or ip_risk is None:
         return None
 
-    event["eventId"] = event.get("eventId") or f"replay-{uuid.uuid4()}"
-    event["userId"] = event.get("userId") or "user-replayed"
-    event["merchantId"] = event.get("merchantId") or "merchant-replayed"
-    event["category"] = event.get("category") or "replay"
-    event["eventTime"] = now_millis()
-    event["amount"] = max(amount, 0.0)
-    event["currency"] = event.get("currency") or "USD"
-    event["country"] = event.get("country") or "UNKNOWN"
-    event["channel"] = event.get("channel") or "replay"
-    event["deviceId"] = event.get("deviceId") or "device-replayed"
+    deterministic_event_id = uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"{source_topic}:{source_partition}:{source_offset}",
+    )
+    event["eventId"] = event.get("eventId") or f"replay-{deterministic_event_id}"
+    event["userId"] = str(event["userId"]).strip()
+    event["eventTime"] = event_time
+    event["amount"] = amount
     event["mlFraudScore"] = ml_fraud_score
-    event["paymentStatus"] = event.get("paymentStatus") or "REPLAYED"
     event["ipRisk"] = ip_risk
     event["replayId"] = f"{replay_run_id}-{source_partition}-{source_offset}"
     event["replayRunId"] = replay_run_id
@@ -69,19 +70,55 @@ def normalize_for_replay(
     return event
 
 
+def replay_block_reason(dlq_value: dict[str, Any]) -> str | None:
+    _, reason = _replay_candidate(dlq_value)
+    return reason
+
+
+def _replay_candidate(dlq_value: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
+    error_type = str(dlq_value.get("errorType") or "")
+    if error_type != "PARSE_OR_VALIDATION_ERROR":
+        return None, f"errorType {error_type or 'UNKNOWN'} requires a separate remediation path"
+
+    raw_value = dlq_value.get("rawValue")
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        return None, "rawValue is missing"
+
+    try:
+        event = json.loads(raw_value)
+    except json.JSONDecodeError:
+        return None, "rawValue is not valid JSON"
+    if not isinstance(event, dict):
+        return None, "rawValue must contain a JSON object"
+
+    user_id = event.get("userId")
+    if not isinstance(user_id, str) or not user_id.strip():
+        return None, "userId cannot be inferred safely"
+
+    amount = _float_or_none(event.get("amount"))
+    if amount is None or amount < 0:
+        return None, "amount must be a finite non-negative number"
+    event_time = _int_or_none(event.get("eventTime"))
+    if event_time is None or event_time <= 0:
+        return None, "eventTime must be preserved as positive epoch millis"
+    score = _float_or_none(event.get("mlFraudScore", 0.0))
+    if score is None or not 0 <= score <= 1:
+        return None, "mlFraudScore must be between 0 and 1"
+    ip_risk = _int_or_none(event.get("ipRisk", 0))
+    if ip_risk is None or not 0 <= ip_risk <= 100:
+        return None, "ipRisk must be between 0 and 100"
+
+    return event, None
+
+
 def to_dlq_sample(record: dict[str, Any], replay_run_id: str) -> dict[str, Any]:
     value = record.get("value")
     if not isinstance(value, dict):
         value = {}
 
     raw_value = str(value.get("rawValue") or "")
-    replayable = normalize_for_replay(
-        value,
-        str(record.get("topic") or ""),
-        int(record.get("partition") or 0),
-        int(record.get("offset") or 0),
-        replay_run_id,
-    ) is not None
+    block_reason = replay_block_reason(value)
+    replayable = block_reason is None
 
     return {
         "topic": record.get("topic"),
@@ -94,6 +131,7 @@ def to_dlq_sample(record: dict[str, Any], replay_run_id: str) -> dict[str, Any]:
         "replayTopic": value.get("replayTopic"),
         "observedAt": value.get("observedAt"),
         "replayable": replayable,
+        "replayBlockReason": block_reason,
         "rawValuePreview": raw_value[:240],
     }
 

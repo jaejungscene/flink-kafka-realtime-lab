@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS merchant_risk_profiles (
   merchant_id TEXT PRIMARY KEY,
-  risk_tier TEXT NOT NULL,
-  risk_multiplier NUMERIC(6, 3) NOT NULL,
+  risk_tier TEXT NOT NULL CHECK (risk_tier IN ('LOW', 'MEDIUM', 'HIGH')),
+  risk_multiplier NUMERIC(6, 3) NOT NULL CHECK (risk_multiplier > 0 AND risk_multiplier <= 10),
   manual_review_required BOOLEAN NOT NULL DEFAULT FALSE,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

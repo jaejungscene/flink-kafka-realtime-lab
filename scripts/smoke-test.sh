@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+curl_api() {
+  if [ -n "${API_TOKEN:-}" ]; then
+    curl -fsS -H "X-API-Token: ${API_TOKEN}" "$@"
+  else
+    curl -fsS "$@"
+  fi
+}
+
 echo "checking Kafka topics"
 docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
 
@@ -27,7 +35,7 @@ wait_for_topic_count() {
   local response
 
   for _ in $(seq 1 "${attempts}"); do
-    response="$(curl -fsS "http://localhost:8000/topics/${topic}/messages?limit=20&timeout_seconds=${api_timeout_seconds}&from_beginning=true")"
+    response="$(curl_api "http://localhost:8000/topics/${topic}/messages?limit=20&timeout_seconds=${api_timeout_seconds}&from_beginning=true")"
     echo "${response}" | sed "s/^/${topic}: /"
     if echo "${response}" | python3 -c "import json,sys; data=json.load(sys.stdin); raise SystemExit(0 if data.get('count', 0) >= ${min_count} else 1)"; then
       return 0
@@ -49,7 +57,7 @@ echo "checking DLQ topic through API"
 wait_for_topic_count "transactions.dlq" 1
 
 echo "checking DLQ summary API"
-curl -fsS "http://localhost:8000/dlq/summary?limit=100&timeout_seconds=3&from_beginning=true" \
+curl_api "http://localhost:8000/dlq/summary?limit=100&timeout_seconds=3&from_beginning=true" \
   | tee /tmp/realtime-lab-dlq-summary.json \
   | sed 's/^/dlq-summary: /'
 python3 - <<'PY'
@@ -65,7 +73,7 @@ if not data.get("byErrorType"):
 PY
 
 echo "checking DLQ replay preview API"
-curl -fsS -X POST "http://localhost:8000/dlq/replay" \
+curl_api -X POST "http://localhost:8000/dlq/replay" \
   -H "content-type: application/json" \
   -d '{"max_messages":1,"scan_limit":200,"timeout_seconds":5,"dry_run":true}' \
   | tee /tmp/realtime-lab-dlq-replay-preview.json \
@@ -83,9 +91,10 @@ if data.get("scanned", 0) < 1:
 PY
 
 echo "checking DLQ replay API"
-curl -fsS -X POST "http://localhost:8000/dlq/replay" \
-  -H "content-type: application/json" \
-  -d '{"max_messages":1,"scan_limit":200,"timeout_seconds":5,"dry_run":false}' \
+API_REPLAY_MAX_MESSAGES=1 \
+API_REPLAY_SCAN_LIMIT=200 \
+API_REPLAY_TIMEOUT_SECONDS=5 \
+python3 scripts/replay-dlq-api.py \
   | tee /tmp/realtime-lab-dlq-replay.json \
   | sed 's/^/dlq-replay: /'
 python3 - <<'PY'
