@@ -5,9 +5,17 @@ on:
     branches: [ main ]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   flink-job-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -17,24 +25,41 @@ jobs:
           cache: maven
       - name: Test Flink job
         working-directory: flink-job
-        run: mvn test
+        run: mvn -B -ntp verify
 
   docker-compose-config:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Validate compose file
         run: docker compose config
       - name: Validate compose file with optional profiles
         run: docker compose --profile schema --profile cdc --profile observability config
+      - name: Validate Prometheus config and rules
+        run: >-
+          docker run --rm --entrypoint promtool
+          -v "$PWD/observability/prometheus:/etc/prometheus:ro"
+          prom/prometheus:v3.5.0
+          check config /etc/prometheus/prometheus.yml
 
   python-and-k8s-static:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            api/requirements.txt
+            api/requirements-test.txt
       - uses: azure/setup-kubectl@v4
+      - name: Install API test dependencies
+        run: python -m pip install -r api/requirements-test.txt
       - name: Compile Python tools
-        run: python3 -m py_compile api/src/main.py common/python/realtime_lab/dlq_tools.py generator/src/producer.py replayer/src/replay_dlq.py scripts/register_schemas.py
+        run: python3 -m py_compile api/src/main.py common/python/realtime_lab/dlq_tools.py generator/src/producer.py replayer/src/replay_dlq.py scripts/register_schemas.py scripts/replay-dlq-api.py
       - name: Test API DLQ helpers
         run: PYTHONPATH=api:common/python python3 -m unittest discover -s api/tests
       - name: Validate JSON schema and dashboard files
@@ -54,7 +79,7 @@ jobs:
           PY
       - name: Validate shell scripts
         run: |
-          bash -n scripts/create-topics.sh scripts/chaos-kill-taskmanager.sh scripts/flink-savepoint.sh scripts/smoke-test.sh scripts/ci-e2e-smoke.sh scripts/load-snapshot.sh scripts/run-load-experiment.sh
+          bash -n flink-job/docker/submit-job.sh scripts/create-topics.sh scripts/chaos-kill-taskmanager.sh scripts/flink-savepoint.sh scripts/smoke-test.sh scripts/ci-e2e-smoke.sh scripts/load-snapshot.sh scripts/run-load-experiment.sh
           sh -n cdc/register-postgres-connector.sh
       - name: Validate Markdown fences
         run: |
