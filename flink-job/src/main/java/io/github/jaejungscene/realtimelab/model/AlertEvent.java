@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 public class AlertEvent implements Serializable {
+    private int schemaVersion = 1;
     private String alertId;
     private String alertType;
     private String severity;
@@ -18,6 +19,14 @@ public class AlertEvent implements Serializable {
     private String sampleEventId;
 
     public AlertEvent() {
+    }
+
+    public int getSchemaVersion() {
+        return schemaVersion;
+    }
+
+    public void setSchemaVersion(int schemaVersion) {
+        this.schemaVersion = schemaVersion;
     }
 
     public static AlertEvent of(
@@ -38,7 +47,7 @@ public class AlertEvent implements Serializable {
                 key,
                 Long.toString(windowStart),
                 Long.toString(windowEnd),
-                sampleEventId == null ? "" : sampleEventId);
+                windowStart == windowEnd && sampleEventId != null ? sampleEventId : "");
         alert.setAlertId(UUID.nameUUIDFromBytes(identity.getBytes(StandardCharsets.UTF_8)).toString());
         alert.setAlertType(alertType);
         alert.setSeverity(severity);

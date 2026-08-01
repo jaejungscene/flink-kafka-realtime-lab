@@ -17,6 +17,7 @@ class JobConfigTest {
                 DeliveryGuarantee.EXACTLY_ONCE,
                 JobConfig.fromArgs(new String[]{
                                 "--sinkDeliveryGuarantee", "exactly_once",
+                                "--sourceIsolationLevel", "read_committed",
                                 "--transactionalIdPrefix", "test-job"})
                         .sinkDeliveryGuarantee());
     }
@@ -64,5 +65,28 @@ class JobConfigTest {
                 () -> JobConfig.fromArgs(new String[]{
                         "--sinkDeliveryGuarantee", "EXACTLY_ONCE",
                         "--transactionalIdPrefix", "---"}));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> JobConfig.fromArgs(new String[]{
+                        "--sinkDeliveryGuarantee", "EXACTLY_ONCE",
+                        "--transactionalIdPrefix", "test-job"}));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> JobConfig.fromArgs(new String[]{"--sourceIsolationLevel", "sometimes"}));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> JobConfig.fromArgs(new String[]{"--riskHighFraudScore", "1.1"}));
+    }
+
+    @Test
+    void parsesSourceIsolationAndRiskRuleArguments() {
+        JobConfig config = JobConfig.fromArgs(new String[]{
+                "--sourceIsolationLevel", "read_committed",
+                "--riskHighFraudScore", "0.8",
+                "--riskBurstCountThreshold", "7"});
+
+        assertEquals(JobConfig.KafkaIsolationLevel.READ_COMMITTED, config.sourceIsolationLevel());
+        assertEquals(0.8, config.riskRules().highFraudScore());
+        assertEquals(7, config.riskRules().burstCountThreshold());
     }
 }

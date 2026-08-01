@@ -48,9 +48,13 @@ public class MerchantRiskProfileParser extends ProcessFunction<KafkaRecord, Merc
         if (root == null || !root.isObject()) {
             throw new IllegalArgumentException("merchant profile payload must be a JSON object");
         }
-        String merchantId = text(root, "merchant_id", text(root, "merchantId", null));
+        String merchantId = text(root, "merchant_id", "merchantId", null);
         if (merchantId == null || merchantId.isBlank()) {
             throw new IllegalArgumentException("merchant_id is required");
+        }
+        merchantId = merchantId.trim();
+        if (merchantId.length() > 256) {
+            throw new IllegalArgumentException("merchant_id must not exceed 256 characters");
         }
 
         MerchantRiskProfile profile = new MerchantRiskProfile();
@@ -60,7 +64,9 @@ public class MerchantRiskProfileParser extends ProcessFunction<KafkaRecord, Merc
             return profile;
         }
 
-        String riskTier = text(root, "risk_tier", text(root, "riskTier", "UNKNOWN")).toUpperCase(Locale.ROOT);
+        String riskTier = text(root, "risk_tier", "riskTier", "UNKNOWN")
+                .trim()
+                .toUpperCase(Locale.ROOT);
         if (!Set.of("LOW", "MEDIUM", "HIGH").contains(riskTier)) {
             throw new IllegalArgumentException("risk_tier must be LOW, MEDIUM, or HIGH");
         }
@@ -75,7 +81,7 @@ public class MerchantRiskProfileParser extends ProcessFunction<KafkaRecord, Merc
                 "manual_review_required",
                 "manualReviewRequired",
                 false));
-        profile.setUpdatedAt(text(root, "updated_at", text(root, "updatedAt", null)));
+        profile.setUpdatedAt(text(root, "updated_at", "updatedAt", null));
         return profile;
     }
 
@@ -86,12 +92,15 @@ public class MerchantRiskProfileParser extends ProcessFunction<KafkaRecord, Merc
         return mapper;
     }
 
-    private static String text(JsonNode root, String fieldName, String fallback) {
-        JsonNode value = root.get(fieldName);
+    private static String text(JsonNode root, String snakeCase, String camelCase, String fallback) {
+        JsonNode value = field(root, snakeCase, camelCase);
         if (value == null || value.isNull()) {
             return fallback;
         }
-        return value.asText();
+        if (!value.isTextual()) {
+            throw new IllegalArgumentException(snakeCase + " must be a string");
+        }
+        return value.textValue();
     }
 
     private static double requiredDouble(JsonNode root, String snakeCase, String camelCase, double fallback) {

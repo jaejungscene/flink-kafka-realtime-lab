@@ -6,6 +6,7 @@ import io.github.jaejungscene.realtimelab.serde.ObjectMapperFactory;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class TransactionParserTest {
@@ -66,6 +67,61 @@ class TransactionParserTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> TransactionParser.parse(invalidIpRisk, ObjectMapperFactory.create(), 1_000L, 100L));
+    }
+
+    @Test
+    void normalizesIdentifiersAndRejectsInvalidSchemaVersions() throws Exception {
+        KafkaRecord normalized = new KafkaRecord(
+                "transactions.raw",
+                0,
+                1L,
+                1L,
+                "user-1",
+                """
+                {
+                  "schemaVersion": 1,
+                  "eventId": " event-1 ",
+                  "userId": " user-1 ",
+                  "merchantId": "   ",
+                  "paymentStatus": " FAILED ",
+                  "eventTime": 1000,
+                  "amount": 10
+                }
+                """);
+        TransactionEvent event = TransactionParser.parse(
+                normalized,
+                ObjectMapperFactory.create(),
+                1_000L,
+                100L);
+
+        assertEquals("event-1", event.getEventId());
+        assertEquals("user-1", event.getUserId());
+        assertNull(event.getMerchantId());
+        assertEquals("FAILED", event.getPaymentStatus());
+
+        KafkaRecord invalidVersion = new KafkaRecord(
+                "transactions.raw",
+                0,
+                2L,
+                1L,
+                "user-1",
+                "{\"schemaVersion\":0,\"eventId\":\"event-1\",\"userId\":\"user-1\","
+                        + "\"eventTime\":1000,\"amount\":10}");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> TransactionParser.parse(
+                        invalidVersion,
+                        ObjectMapperFactory.create(),
+                        1_000L,
+                        100L));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> TransactionParser.parse(
+                        normalized,
+                        ObjectMapperFactory.create(),
+                        1_000L,
+                        -1L));
     }
 
     private static KafkaRecord recordWith(long eventTime, double score, int ipRisk) {

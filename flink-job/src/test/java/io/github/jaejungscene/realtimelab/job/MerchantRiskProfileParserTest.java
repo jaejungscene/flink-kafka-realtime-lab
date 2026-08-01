@@ -91,4 +91,31 @@ class MerchantRiskProfileParserTest {
                         "{\"merchant_id\":\"merchant-1\",\"risk_tier\":\"LOW\",\"risk_multiplier\":0}",
                         ObjectMapperFactory.create()));
     }
+
+    @Test
+    void canonicalFieldsTakePrecedenceOverAliases() throws Exception {
+        MerchantRiskProfile profile = MerchantRiskProfileParser.parse(
+                """
+                {
+                  "merchant_id": "merchant-1",
+                  "merchantId": 123,
+                  "risk_tier": "LOW",
+                  "riskTier": false,
+                  "risk_multiplier": 1
+                }
+                """,
+                ObjectMapperFactory.create());
+
+        assertEquals("merchant-1", profile.getMerchantId());
+        assertEquals("LOW", profile.getRiskTier());
+    }
+
+    @Test
+    void rejectsNonTextualMerchantIdentifiers() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> MerchantRiskProfileParser.parse(
+                        "{\"merchant_id\":123,\"risk_tier\":\"LOW\"}",
+                        ObjectMapperFactory.create()));
+    }
 }

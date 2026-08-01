@@ -3,6 +3,7 @@ package io.github.jaejungscene.realtimelab.model;
 import java.io.Serializable;
 
 public class DlqEvent implements Serializable {
+    private int schemaVersion = 1;
     private String errorType;
     private String reason;
     private String sourceTopic;
@@ -15,6 +16,14 @@ public class DlqEvent implements Serializable {
     private long observedAt;
 
     public DlqEvent() {
+    }
+
+    public int getSchemaVersion() {
+        return schemaVersion;
+    }
+
+    public void setSchemaVersion(int schemaVersion) {
+        this.schemaVersion = schemaVersion;
     }
 
     public DlqEvent(String errorType, String reason, String rawValue, long observedAt) {

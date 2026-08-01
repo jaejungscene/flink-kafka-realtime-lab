@@ -19,11 +19,12 @@ import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.state.BroadcastState;
 import org.apache.flink.api.common.state.MapStateDescriptor;
 import org.apache.flink.api.common.state.ReadOnlyBroadcastState;
+import org.apache.flink.connector.base.DeliveryGuarantee;
 import org.apache.flink.connector.kafka.sink.KafkaSink;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
+import org.apache.flink.core.execution.CheckpointingMode;
 import org.apache.flink.streaming.api.datastream.BroadcastStream;
-import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
@@ -33,6 +34,7 @@ import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindo
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.OutputTag;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
 
 import java.io.Serializable;
 import java.time.Duration;
@@ -42,8 +44,7 @@ import java.util.Locale;
 public class RealTimeAlertJob {
     private static final OutputTag<DlqEvent> DLQ_TAG = new OutputTag<>("dlq") {
     };
-    private static final OutputTag<TransactionEvent> LATE_EVENT_TAG = new OutputTag<>("late-events") {
-    };
+    private static final Duration WINDOW_SIZE = Duration.ofMinutes(1);
 
     public static void main(String[] args) throws Exception {
         JobConfig config = JobConfig.fromArgs(args);
@@ -54,15 +55,21 @@ public class RealTimeAlertJob {
         String aggregateTopic = config.aggregateTopic();
         String dlqTopic = config.dlqTopic();
         Duration allowedLateness = config.allowedLateness();
+        RiskRules riskRules = new RiskRules(config.riskRules());
 
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.enableCheckpointing(config.checkpointIntervalMillis());
+        CheckpointingMode checkpointingMode =
+                config.sinkDeliveryGuarantee() == DeliveryGuarantee.EXACTLY_ONCE
+                ? CheckpointingMode.EXACTLY_ONCE
+                : CheckpointingMode.AT_LEAST_ONCE;
+        env.enableCheckpointing(config.checkpointIntervalMillis(), checkpointingMode);
 
         KafkaSource<KafkaRecord> rawSource = KafkaSource.<KafkaRecord>builder()
                 .setBootstrapServers(config.bootstrapServers())
                 .setTopics(List.of(rawTopic, replayTopic))
                 .setGroupId(config.consumerGroup())
                 .setStartingOffsets(sourceOffsets(config.sourceStartupMode()))
+                .setProperty(ConsumerConfig.ISOLATION_LEVEL_CONFIG, config.sourceIsolationLevel().kafkaValue())
                 .setDeserializer(new KafkaEnvelopeDeserializationSchema())
                 .build();
 
@@ -71,6 +78,7 @@ public class RealTimeAlertJob {
                 .setTopics(merchantRiskProfileTopic)
                 .setGroupId(config.consumerGroup() + "-merchant-profiles")
                 .setStartingOffsets(OffsetsInitializer.earliest())
+                .setProperty(ConsumerConfig.ISOLATION_LEVEL_CONFIG, config.sourceIsolationLevel().kafkaValue())
                 .setDeserializer(new KafkaEnvelopeDeserializationSchema())
                 .build();
 
@@ -99,7 +107,7 @@ public class RealTimeAlertJob {
                                 .<TransactionEvent>forBoundedOutOfOrderness(config.watermarkDelay())
                                 .withIdleness(config.sourceIdleTimeout())
                                 .withTimestampAssigner((event, timestamp) -> event.getEventTime()))
-                .process(new LateEventRouter(allowedLateness, rawTopic, replayTopic))
+                .process(new LateEventRouter(WINDOW_SIZE, allowedLateness, rawTopic, replayTopic))
                 .name("event-time-watermarks");
 
         parsedEvents
@@ -113,17 +121,16 @@ public class RealTimeAlertJob {
                 .name("sink-profile-dlq");
 
         events
-                .filter(new HighRiskFilter())
-                .map(new HighRiskAlertMapper())
+                .filter(new HighRiskFilter(riskRules))
+                .map(new HighRiskAlertMapper(riskRules))
                 .sinkTo(kafkaSink(config, alertTopic, AlertEvent::getKey, "high-risk-alerts"))
                 .name("sink-high-risk-alerts");
 
         SingleOutputStreamOperator<AlertEvent> userWindowAlerts = events
                 .keyBy(TransactionEvent::getUserId)
-                .window(TumblingEventTimeWindows.of(Duration.ofMinutes(1)))
+                .window(TumblingEventTimeWindows.of(WINDOW_SIZE))
                 .allowedLateness(allowedLateness)
-                .sideOutputLateData(LATE_EVENT_TAG)
-                .process(new UserWindowAlertFunction())
+                .process(new UserWindowAlertFunction(riskRules))
                 .name("user-window-alerts");
 
         userWindowAlerts
@@ -132,10 +139,9 @@ public class RealTimeAlertJob {
 
         SingleOutputStreamOperator<AggregateEvent> aggregates = events
                 .keyBy(RealTimeAlertJob::aggregateKey)
-                .window(TumblingEventTimeWindows.of(Duration.ofMinutes(1)))
+                .window(TumblingEventTimeWindows.of(WINDOW_SIZE))
                 .allowedLateness(allowedLateness)
-                .sideOutputLateData(LATE_EVENT_TAG)
-                .aggregate(new TransactionStatsAggregate(), new TransactionAggregateWindowFunction())
+                .aggregate(new TransactionStatsAggregate(riskRules), new TransactionAggregateWindowFunction())
                 .name("country-category-merchant-aggregates");
 
         aggregates
@@ -144,31 +150,26 @@ public class RealTimeAlertJob {
 
         SingleOutputStreamOperator<AlertEvent> merchantAnomalyAlerts = events
                 .keyBy(event -> normalize(event.getMerchantId(), "merchant-unknown"))
-                .window(TumblingEventTimeWindows.of(Duration.ofMinutes(1)))
+                .window(TumblingEventTimeWindows.of(WINDOW_SIZE))
                 .allowedLateness(allowedLateness)
-                .sideOutputLateData(LATE_EVENT_TAG)
-                .aggregate(new TransactionStatsAggregate(), new MerchantAnomalyWindowFunction())
+                .aggregate(
+                        new TransactionStatsAggregate(riskRules),
+                        new MerchantAnomalyWindowFunction(riskRules))
                 .name("merchant-anomaly-alerts");
 
         merchantAnomalyAlerts
                 .sinkTo(kafkaSink(config, alertTopic, AlertEvent::getKey, "merchant-anomaly-alerts"))
                 .name("sink-merchant-anomaly-alerts");
 
-        DataStream<DlqEvent> windowLateEvents = userWindowAlerts
-                .getSideOutput(LATE_EVENT_TAG)
-                .union(aggregates.getSideOutput(LATE_EVENT_TAG), merchantAnomalyAlerts.getSideOutput(LATE_EVENT_TAG))
-                .map(new LateEventDlqMapper(rawTopic, replayTopic));
-
         events
                 .getSideOutput(DLQ_TAG)
-                .union(windowLateEvents)
                 .sinkTo(kafkaSink(config, dlqTopic, dlqKey(), "late-events-dlq"))
                 .name("sink-late-events-dlq");
 
         env.execute("flink-kraft-realtime-lab");
     }
 
-    private static String aggregateKey(TransactionEvent event) {
+    static String aggregateKey(TransactionEvent event) {
         String country = normalize(event.getCountry(), "UNKNOWN");
         String category = normalize(event.getCategory(), "uncategorized");
         String merchant = normalize(event.getMerchantId(), "merchant-unknown");
@@ -176,7 +177,7 @@ public class RealTimeAlertJob {
     }
 
     private static String normalize(String value, String fallback) {
-        return value == null || value.isBlank() ? fallback : value;
+        return value == null || value.isBlank() ? fallback : value.trim();
     }
 
     private static MapStateDescriptor<String, MerchantRiskProfile> merchantProfileStateDescriptor() {
@@ -211,12 +212,18 @@ public class RealTimeAlertJob {
     }
 
     static class LateEventRouter extends ProcessFunction<TransactionEvent, TransactionEvent> {
+        private final long windowSizeMillis;
         private final long allowedLatenessMillis;
         private final String rawTopic;
         private final String replayTopic;
         private transient ObjectMapper mapper;
 
-        LateEventRouter(Duration allowedLateness, String rawTopic, String replayTopic) {
+        LateEventRouter(
+                Duration windowSize,
+                Duration allowedLateness,
+                String rawTopic,
+                String replayTopic) {
+            this.windowSizeMillis = windowSize.toMillis();
             this.allowedLatenessMillis = allowedLateness.toMillis();
             this.rawTopic = rawTopic;
             this.replayTopic = replayTopic;
@@ -229,7 +236,11 @@ public class RealTimeAlertJob {
                 Collector<TransactionEvent> out) throws Exception {
             long currentWatermark = context.timerService().currentWatermark();
             if (currentWatermark != Long.MIN_VALUE
-                    && event.getEventTime() + allowedLatenessMillis < currentWatermark) {
+                    && isPastWindowCleanup(
+                            event.getEventTime(),
+                            currentWatermark,
+                            windowSizeMillis,
+                            allowedLatenessMillis)) {
                 if (mapper == null) {
                     mapper = ObjectMapperFactory.create();
                 }
@@ -241,17 +252,29 @@ public class RealTimeAlertJob {
     }
 
     static class HighRiskFilter implements FilterFunction<TransactionEvent> {
+        private final RiskRules riskRules;
+
+        HighRiskFilter(RiskRules riskRules) {
+            this.riskRules = riskRules;
+        }
+
         @Override
         public boolean filter(TransactionEvent event) {
-            return RiskRules.isHighRisk(event);
+            return riskRules.isHighRisk(event);
         }
     }
 
     static class HighRiskAlertMapper implements MapFunction<TransactionEvent, AlertEvent> {
+        private final RiskRules riskRules;
+
+        HighRiskAlertMapper(RiskRules riskRules) {
+            this.riskRules = riskRules;
+        }
+
         @Override
         public AlertEvent map(TransactionEvent event) {
             String riskTier = normalize(event.getMerchantRiskTier(), "UNKNOWN");
-            double effectiveFraudScore = RiskRules.effectiveFraudScore(event);
+            double effectiveFraudScore = riskRules.effectiveFraudScore(event);
             return AlertEvent.of(
                     "HIGH_RISK_TRANSACTION",
                     "CRITICAL",
@@ -273,6 +296,12 @@ public class RealTimeAlertJob {
 
     static class UserWindowAlertFunction
             extends ProcessWindowFunction<TransactionEvent, AlertEvent, String, TimeWindow> {
+        private final RiskRules riskRules;
+
+        UserWindowAlertFunction(RiskRules riskRules) {
+            this.riskRules = riskRules;
+        }
+
         @Override
         public void process(
                 String userId,
@@ -286,13 +315,13 @@ public class RealTimeAlertJob {
             for (TransactionEvent event : events) {
                 count++;
                 totalAmount += event.getAmount();
-                if (sampleEventId == null) {
+                if (sampleEventId == null || event.getEventId().compareTo(sampleEventId) < 0) {
                     sampleEventId = event.getEventId();
                 }
             }
 
-            if (RiskRules.isBurst(count, totalAmount)) {
-                boolean amountTriggered = totalAmount >= RiskRules.BURST_AMOUNT_THRESHOLD;
+            if (riskRules.isBurst(count, totalAmount)) {
+                boolean amountTriggered = totalAmount >= riskRules.config().burstAmountThreshold();
                 String reason = "user window exceeded count or amount threshold; count="
                         + count
                         + ", totalAmount="
@@ -319,11 +348,11 @@ public class RealTimeAlertJob {
         private double totalFraudScore;
         private String sampleEventId;
 
-        void add(TransactionEvent event) {
+        void add(TransactionEvent event, RiskRules riskRules) {
             count++;
             totalAmount += event.getAmount();
-            totalFraudScore += RiskRules.effectiveFraudScore(event);
-            if (sampleEventId == null) {
+            totalFraudScore += riskRules.effectiveFraudScore(event);
+            if (sampleEventId == null || event.getEventId().compareTo(sampleEventId) < 0) {
                 sampleEventId = event.getEventId();
             }
         }
@@ -332,7 +361,9 @@ public class RealTimeAlertJob {
             count += other.count;
             totalAmount += other.totalAmount;
             totalFraudScore += other.totalFraudScore;
-            if (sampleEventId == null) {
+            if (sampleEventId == null
+                    || (other.sampleEventId != null
+                            && other.sampleEventId.compareTo(sampleEventId) < 0)) {
                 sampleEventId = other.sampleEventId;
             }
             return this;
@@ -341,6 +372,12 @@ public class RealTimeAlertJob {
 
     static class TransactionStatsAggregate
             implements AggregateFunction<TransactionEvent, TransactionStats, TransactionStats> {
+        private final RiskRules riskRules;
+
+        TransactionStatsAggregate(RiskRules riskRules) {
+            this.riskRules = riskRules;
+        }
+
         @Override
         public TransactionStats createAccumulator() {
             return new TransactionStats();
@@ -348,7 +385,7 @@ public class RealTimeAlertJob {
 
         @Override
         public TransactionStats add(TransactionEvent value, TransactionStats accumulator) {
-            accumulator.add(value);
+            accumulator.add(value, riskRules);
             return accumulator;
         }
 
@@ -373,7 +410,7 @@ public class RealTimeAlertJob {
                 Collector<AggregateEvent> out) {
             TransactionStats stat = stats.iterator().next();
             AggregateEvent aggregate = new AggregateEvent();
-            aggregate.setAggregateType("COUNTRY_CATEGORY_1M");
+            aggregate.setAggregateType("COUNTRY_CATEGORY_MERCHANT_1M");
             aggregate.setKey(key);
             aggregate.setWindowStart(context.window().getStart());
             aggregate.setWindowEnd(context.window().getEnd());
@@ -387,6 +424,12 @@ public class RealTimeAlertJob {
 
     static class MerchantAnomalyWindowFunction
             extends ProcessWindowFunction<TransactionStats, AlertEvent, String, TimeWindow> {
+        private final RiskRules riskRules;
+
+        MerchantAnomalyWindowFunction(RiskRules riskRules) {
+            this.riskRules = riskRules;
+        }
+
         @Override
         public void process(
                 String merchantId,
@@ -395,7 +438,7 @@ public class RealTimeAlertJob {
                 Collector<AlertEvent> out) {
             TransactionStats stat = stats.iterator().next();
             double avgFraudScore = stat.count == 0 ? 0.0 : stat.totalFraudScore / stat.count;
-            if (!RiskRules.isMerchantAnomaly(stat.count, stat.totalAmount, avgFraudScore)) {
+            if (!riskRules.isMerchantAnomaly(stat.count, stat.totalAmount, avgFraudScore)) {
                 return;
             }
 
@@ -406,8 +449,9 @@ public class RealTimeAlertJob {
                     + ", avgFraudScore="
                     + String.format(Locale.ROOT, "%.4f", avgFraudScore);
 
-            boolean riskTriggered = avgFraudScore >= RiskRules.MERCHANT_AVG_FRAUD_SCORE_THRESHOLD;
-            boolean amountTriggered = stat.totalAmount >= RiskRules.MERCHANT_AMOUNT_THRESHOLD;
+            boolean riskTriggered = avgFraudScore
+                    >= riskRules.config().merchantAvgFraudScoreThreshold();
+            boolean amountTriggered = stat.totalAmount >= riskRules.config().merchantAmountThreshold();
             out.collect(AlertEvent.of(
                     "MERCHANT_ANOMALY",
                     riskTriggered ? "CRITICAL" : "WARN",
@@ -419,25 +463,6 @@ public class RealTimeAlertJob {
                     riskTriggered ? "avgFraudScore" : amountTriggered ? "totalAmount" : "eventCount",
                     riskTriggered ? avgFraudScore : amountTriggered ? stat.totalAmount : stat.count,
                     stat.sampleEventId));
-        }
-    }
-
-    static class LateEventDlqMapper implements MapFunction<TransactionEvent, DlqEvent> {
-        private final String rawTopic;
-        private final String replayTopic;
-        private transient ObjectMapper mapper;
-
-        LateEventDlqMapper(String rawTopic, String replayTopic) {
-            this.rawTopic = rawTopic;
-            this.replayTopic = replayTopic;
-        }
-
-        @Override
-        public DlqEvent map(TransactionEvent event) {
-            if (mapper == null) {
-                mapper = ObjectMapperFactory.create();
-            }
-            return lateEventDlq(event, rawTopic, replayTopic, mapper);
         }
     }
 
@@ -494,7 +519,7 @@ public class RealTimeAlertJob {
         }
         return new DlqEvent(
                 "LATE_EVENT",
-                "event arrived after watermark and allowed lateness",
+                "event arrived after the window cleanup deadline",
                 normalize(event.getSourceTopic(), rawTopic),
                 event.getSourcePartition() < 0 ? null : event.getSourcePartition(),
                 event.getSourceOffset() < 0 ? null : event.getSourceOffset(),
@@ -503,6 +528,19 @@ public class RealTimeAlertJob {
                 replayTopic,
                 rawValue,
                 System.currentTimeMillis());
+    }
+
+    static boolean isPastWindowCleanup(
+            long eventTime,
+            long currentWatermark,
+            long windowSizeMillis,
+            long allowedLatenessMillis) {
+        if (windowSizeMillis <= 0 || allowedLatenessMillis < 0) {
+            throw new IllegalArgumentException("window size must be positive and lateness must not be negative");
+        }
+        long windowStart = Math.floorDiv(eventTime, windowSizeMillis) * windowSizeMillis;
+        long windowMaxTimestamp = windowStart + windowSizeMillis - 1;
+        return windowMaxTimestamp + allowedLatenessMillis <= currentWatermark;
     }
 
     private static double round(double value) {

@@ -3,13 +3,16 @@ import os
 import random
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 from confluent_kafka import Producer
 
 
-BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092")
-RAW_TOPIC = os.getenv("RAW_TOPIC", "transactions.raw")
+def non_blank_setting(name: str, fallback: str) -> str:
+    value = os.getenv(name, fallback).strip()
+    if not value:
+        raise RuntimeError(f"{name} must not be blank")
+    return value
 
 
 def positive_int_setting(name: str, fallback: int) -> int:
@@ -33,23 +36,25 @@ def boolean_setting(name: str, fallback: bool) -> bool:
     return normalized == "true"
 
 
+BOOTSTRAP_SERVERS = non_blank_setting("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092")
+RAW_TOPIC = non_blank_setting("RAW_TOPIC", "transactions.raw")
 EVENTS_PER_SECOND = positive_int_setting("EVENTS_PER_SECOND", 20)
 RUN_SECONDS = positive_int_setting("RUN_SECONDS", 60)
 INCLUDE_BAD_EVENTS = boolean_setting("INCLUDE_BAD_EVENTS", True)
 
-CATEGORIES = ["electronics", "grocery", "travel", "gaming", "fashion", "subscription"]
-COUNTRIES = ["KR", "US", "JP", "SG", "DE"]
-CHANNELS = ["web", "mobile", "partner_api"]
-PAYMENT_STATUSES = ["APPROVED", "APPROVED", "APPROVED", "FAILED"]
+CATEGORIES = ("electronics", "grocery", "travel", "gaming", "fashion", "subscription")
+COUNTRIES = ("KR", "US", "JP", "SG", "DE")
+CHANNELS = ("web", "mobile", "partner_api")
+PAYMENT_STATUSES = ("APPROVED", "APPROVED", "APPROVED", "FAILED")
 
 
 def now_millis() -> int:
-    return int(datetime.now(tz=timezone.utc).timestamp() * 1000)
+    return int(datetime.now(tz=UTC).timestamp() * 1000)
 
 
 def make_event(index: int) -> dict:
     burst_user = "user-burst" if index % 17 in (0, 1, 2, 3, 4, 5) else None
-    hot_merchant = "merchant-hot" if index % 23 in range(0, 12) else None
+    hot_merchant = "merchant-hot" if index % 23 in range(12) else None
     risky = random.random() < 0.08
 
     amount = round(random.uniform(5, 250), 2)
@@ -77,6 +82,7 @@ def make_event(index: int) -> dict:
         event_time = now_millis() - 180_000
 
     return {
+        "schemaVersion": 1,
         "eventId": str(uuid.uuid4()),
         "userId": burst_user or f"user-{random.randint(1, 120):03d}",
         "merchantId": hot_merchant or f"merchant-{random.randint(1, 30):02d}",

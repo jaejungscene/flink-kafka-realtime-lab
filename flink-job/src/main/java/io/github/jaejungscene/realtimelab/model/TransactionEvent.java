@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.io.Serializable;
 
 public class TransactionEvent implements Serializable {
+    private int schemaVersion = 1;
     private String eventId;
     private String userId;
     private String merchantId;
@@ -41,6 +42,14 @@ public class TransactionEvent implements Serializable {
     private String originalRawValue;
 
     public TransactionEvent() {
+    }
+
+    public int getSchemaVersion() {
+        return schemaVersion;
+    }
+
+    public void setSchemaVersion(int schemaVersion) {
+        this.schemaVersion = schemaVersion;
     }
 
     public String getEventId() {

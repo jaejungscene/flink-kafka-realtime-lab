@@ -73,11 +73,16 @@ public class TransactionParser extends ProcessFunction<KafkaRecord, TransactionE
     }
 
     static void validate(TransactionEvent event, long currentTimeMillis, long maxFutureSkewMillis) {
-        if (isBlank(event.getEventId())) {
-            throw new IllegalArgumentException("eventId is required");
+        if (maxFutureSkewMillis < 0) {
+            throw new IllegalArgumentException("maxFutureSkewMillis must not be negative");
         }
-        if (isBlank(event.getUserId())) {
-            throw new IllegalArgumentException("userId is required");
+        event.setEventId(requiredIdentifier(event.getEventId(), "eventId"));
+        event.setUserId(requiredIdentifier(event.getUserId(), "userId"));
+        if (event.getMerchantId() != null) {
+            event.setMerchantId(optionalIdentifier(event.getMerchantId(), "merchantId"));
+        }
+        if (event.getSchemaVersion() < 1) {
+            throw new IllegalArgumentException("schemaVersion must be greater than 0");
         }
         if (event.getEventTime() <= 0) {
             throw new IllegalArgumentException("eventTime must be epoch millis");
@@ -96,10 +101,36 @@ public class TransactionParser extends ProcessFunction<KafkaRecord, TransactionE
         if (event.getIpRisk() < 0 || event.getIpRisk() > 100) {
             throw new IllegalArgumentException("ipRisk must be between 0 and 100");
         }
+        if (event.getPaymentStatus() != null) {
+            String paymentStatus = event.getPaymentStatus().trim();
+            event.setPaymentStatus(paymentStatus.isEmpty() ? null : paymentStatus);
+        }
     }
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private static String requiredIdentifier(String value, String fieldName) {
+        if (isBlank(value)) {
+            throw new IllegalArgumentException(fieldName + " is required");
+        }
+        return boundedIdentifier(value, fieldName);
+    }
+
+    private static String optionalIdentifier(String value, String fieldName) {
+        if (value.isBlank()) {
+            return null;
+        }
+        return boundedIdentifier(value, fieldName);
+    }
+
+    private static String boundedIdentifier(String value, String fieldName) {
+        String normalized = value.trim();
+        if (normalized.length() > 256) {
+            throw new IllegalArgumentException(fieldName + " must not exceed 256 characters");
+        }
+        return normalized;
     }
 
     private static String errorMessage(Exception exception) {

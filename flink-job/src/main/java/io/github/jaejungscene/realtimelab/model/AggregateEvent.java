@@ -3,6 +3,7 @@ package io.github.jaejungscene.realtimelab.model;
 import java.io.Serializable;
 
 public class AggregateEvent implements Serializable {
+    private int schemaVersion = 1;
     private String aggregateType;
     private String key;
     private long windowStart;
@@ -13,6 +14,14 @@ public class AggregateEvent implements Serializable {
     private double avgFraudScore;
 
     public AggregateEvent() {
+    }
+
+    public int getSchemaVersion() {
+        return schemaVersion;
+    }
+
+    public void setSchemaVersion(int schemaVersion) {
+        this.schemaVersion = schemaVersion;
     }
 
     public String getAggregateType() {

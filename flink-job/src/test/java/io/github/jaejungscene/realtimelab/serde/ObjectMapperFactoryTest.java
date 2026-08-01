@@ -6,6 +6,7 @@ import io.github.jaejungscene.realtimelab.model.TransactionEvent;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ObjectMapperFactoryTest {
@@ -27,6 +28,8 @@ class ObjectMapperFactoryTest {
         assertEquals("evt-1", event.getEventId());
         assertEquals("user-1", event.getUserId());
         assertEquals(42.5, event.getAmount());
+        assertEquals(1, event.getSchemaVersion());
+        assertTrue(mapper.writeValueAsString(event).contains("\"schemaVersion\":1"));
     }
 
     @Test
