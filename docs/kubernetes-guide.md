@@ -30,7 +30,8 @@ kubectl -n realtime-lab get kafka,kafkatopic,flinkdeployment,pod
 
 `Kafka`, `KafkaTopic`, `KafkaNodePool`, `FlinkDeployment`는 custom resource입니다. 따라서 Strimzi와 Flink Operator CRD가 먼저 설치되어 있어야 합니다.
 
-API 인증을 켜려면 apply 전에 optional Secret을 만듭니다.
+API 인증을 켜려면 apply 전에 Secret을 만듭니다. dev/base에서는 누락을 허용하지만
+prod-like overlay는 이 Secret을 필수로 요구합니다.
 
 ```bash
 kubectl apply -f k8s/base/namespace.yaml

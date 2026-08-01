@@ -32,7 +32,6 @@ Kafka 조회 부하를 줄이기 위해 결과를 기본 10초 동안 cache합�
 | `realtime_lab_kafka_up` | Kafka metadata/offset 수집 성공 여부 |
 | `realtime_lab_kafka_topic_available` | topic 존재 여부 |
 | `realtime_lab_kafka_topic_retained_records` | partition의 `high-low` offset 차이 |
-| `realtime_lab_kafka_topic_retained_records_total` | topic별 `high-low` 합계 |
 | `realtime_lab_kafka_topic_log_end_offset` | partition log end offset |
 | `realtime_lab_kafka_consumer_lag` | `flink-realtime-lab` group의 partition별 lag |
 | `realtime_lab_metrics_partition_errors` | offset 조회에 실패한 partition 수 |
@@ -56,9 +55,10 @@ make load-experiment-small
 
 자세한 해석 기준은 [부하/백프레셔 실험 가이드](load-backpressure-guide.md)를 참고합니다.
 
-Prometheus rule은 Kafka metric 수집 실패, consumer lag, partition offset 수집 오류를
-감지합니다. 예제 threshold는 lab 부하에 맞춘 값이므로 실제 SLO로 그대로 사용하지
-않습니다.
+Prometheus rule은 API metrics endpoint scrape 실패, Kafka metric 수집 실패, 구성된 topic
+누락, consumer lag, partition offset 수집 오류를 감지합니다. topic별 합계는 별도
+`_total` metric을 만들지 않고 PromQL의 `sum by (topic)`으로 계산합니다. 예제 threshold는
+lab 부하에 맞춘 값이므로 실제 SLO로 그대로 사용하지 않습니다.
 
 ## 실무 확장
 

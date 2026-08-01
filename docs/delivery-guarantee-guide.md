@@ -34,9 +34,12 @@ Flink job은 `--sinkDeliveryGuarantee` 인자를 받습니다.
 ```bash
 --sinkDeliveryGuarantee AT_LEAST_ONCE
 --sinkDeliveryGuarantee EXACTLY_ONCE
+--sourceIsolationLevel read_committed
 ```
 
 `EXACTLY_ONCE`일 때는 Kafka sink에 operator별 transactional id prefix를 설정합니다. 같은 topic으로 여러 sink가 쓰더라도 alert, aggregate, DLQ sink가 서로 다른 transaction namespace를 사용합니다.
+Job은 sink guarantee에 맞춰 Flink checkpoint mode도 명시적으로 설정하며,
+`EXACTLY_ONCE`와 `read_uncommitted` 조합은 시작 단계에서 거부합니다.
 
 ## 실무에서 주의할 점
 
@@ -48,8 +51,8 @@ Flink job은 `--sinkDeliveryGuarantee` 인자를 받습니다.
 - checkpoint interval이 너무 길면 transaction이 오래 열리고, 너무 짧으면 overhead가 늘어납니다.
 - 운영 Kafka는 `transaction.state.log.replication.factor`, `transaction.state.log.min.isr`, `transaction.max.timeout.ms`를 broker 수와 checkpoint 정책에 맞게 설정해야 합니다.
 - 장애 복구 후 중복이 절대 없어야 하는 도메인은 output key, idempotent sink, dedup key도 함께 설계해야 합니다.
-- Flink checkpoint mode와 Kafka sink guarantee는 함께 바꿔야 합니다. 이 저장소의 Make
-  target과 K8s overlay는 두 값을 같은 모드로 설정합니다.
+- Flink checkpoint mode, Kafka sink guarantee, source consumer isolation level을 함께
+  바꿔야 합니다. 이 저장소는 잘못된 조합을 시작 단계에서 검증합니다.
 
 ## 이 프로젝트의 의도
 

@@ -29,7 +29,8 @@
 make ci-smoke
 ```
 
-Exactly-once 모드도 같은 흐름으로 검증할 수 있습니다.
+Exactly-once 모드도 같은 흐름으로 검증할 수 있습니다. GitHub Actions에서는 두 모드를
+matrix의 독립 job으로 모두 실행합니다.
 
 ```bash
 make ci-smoke-exactly-once
@@ -51,9 +52,11 @@ make ci-smoke-exactly-once
 CI_GENERATOR_RUN_SECONDS=60 CI_GENERATOR_EVENTS_PER_SECOND=50 make ci-smoke
 ```
 
-E2E 이전 job에서는 Java `mvn verify`, API/Python unit test, Compose 전체 profile
+E2E 이전 job에서는 Java `mvn verify`, API/Python unit test와 Ruff, Compose 전체 profile
 렌더링, Prometheus rule 검사, JSON/shell 구문 검사, 세 Kustomize overlay 렌더링을 먼저
-수행합니다. E2E는 이 정적·단위 검증이 통과한 뒤에만 시작합니다.
+수행합니다. 별도 CDC smoke job은 Debezium connector와 task가 실제로 `RUNNING`이 되는지
+확인한 뒤 PostgreSQL 초기 snapshot 레코드를 `merchant_risk_profiles`에서 직접 소비해
+JSON payload까지 검증합니다. E2E는 정적·단위 검증이 통과한 뒤에만 시작합니다.
 
 ## 실패 시 확인할 것
 

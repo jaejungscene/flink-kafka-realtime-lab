@@ -83,6 +83,8 @@ FastAPI와 CLI replayer가 같은 helper를 사용합니다.
 - `PARSE_OR_VALIDATION_ERROR`만 자동 replay 후보로 취급
 - 유효한 JSON object와 기존 `userId`, `eventTime`, `amount` 요구
 - 비어 있는 `eventId`만 source offset 기반의 결정적 값으로 생성
+- `eventTime`이 현재 시각보다 `MAX_FUTURE_SKEW_SECONDS` 이상 앞서면 차단
+- 양의 `schemaVersion`과 문자열 식별자 요구
 - `replayRunId`, `replaySourceTopic`, `replaySourcePartition`, `replaySourceOffset` 추가
 
 malformed JSON, late event, reference data 오류, 음수/비정상 숫자는 자동 replay하지 않습니다.
@@ -91,9 +93,12 @@ malformed JSON, late event, reference data 오류, 음수/비정상 숫자는 �
 
 - replay API는 기본값을 `dry_run=true`로 둡니다.
 - 실행에는 preview에서 고른 exact offset, 동일한 run ID, `confirm=true`가 필요합니다.
+- run ID는 3–80자의 영문자·숫자·점·밑줄·하이픈만 허용합니다.
 - 한 번에 많은 record를 replay하지 말고 `max_messages`를 작게 시작합니다.
 - DLQ 원본은 지우지 않고 immutable하게 보존합니다.
 - replay topic을 raw topic과 분리해 lineage를 남깁니다.
 - `API_TOKEN`을 설정하면 `X-API-Token` header가 topic/DLQ endpoint에 필요합니다.
 - 이 lab은 영속적인 replay audit/dedup 저장소가 없습니다. 실제 운영에서는 ticket,
   승인자, 처리 결과, source offset unique constraint를 별도 저장해야 합니다.
+- 동일 run ID와 offset은 안정적인 dedup key를 만들지만 Kafka 발행 자체를 멱등하게
+  만들지는 않습니다. API retry 시 downstream dedup이 필요합니다.

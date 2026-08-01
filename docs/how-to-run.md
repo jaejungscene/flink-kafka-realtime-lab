@@ -22,6 +22,9 @@ cd flink-kraft-realtime-lab
 공유 환경에서는 `.env.example`을 `.env`로 복사하고 PostgreSQL/Grafana 비밀번호와
 `API_TOKEN`을 바꾸십시오. API token을 설정한 경우 topic/DLQ 요청에
 `X-API-Token` header가 필요합니다.
+모든 host port는 `127.0.0.1`에만 바인딩되며 다른 머신에 직접 노출되지 않습니다.
+`RISK_*` 값은 `flink-submit` 인자로 변환되어 TaskManager가 실행할 규칙 설정에
+포함됩니다.
 
 | 포트 | 서비스 |
 | ---: | --- |

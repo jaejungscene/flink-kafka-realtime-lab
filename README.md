@@ -39,7 +39,7 @@ flowchart LR
 - `HIGH_RISK_TRANSACTION`: 단건 ML score, 금액, IP risk 기반 fraud 알람
 - `USER_PAYMENT_BURST`: 사용자별 1분 window burst 알람
 - `MERCHANT_ANOMALY`: 가맹점별 1분 거래량/금액/평균 위험도 알람
-- `COUNTRY_CATEGORY_1M`: 국가/카테고리/가맹점 기준 1분 실시간 집계
+- `COUNTRY_CATEGORY_MERCHANT_1M`: 국가/카테고리/가맹점 기준 1분 실시간 집계
 - `transactions.dlq`: 파싱 실패, 검증 실패, late event 격리
 - `transactions.replay`: 안전성 검사를 통과한 DLQ 이벤트의 재처리 topic
 - `merchant_risk_profiles`: PostgreSQL CDC 기반 가맹점 risk profile을 Flink Broadcast State로 join
@@ -81,6 +81,7 @@ flowchart LR
 
 공유 환경에서 비밀번호나 API token을 바꾸려면 `.env.example`을 복사해 `.env`를
 만드십시오. 로컬 기본값만 사용할 때는 생략할 수 있습니다.
+Compose의 host port는 로컬 머신(`127.0.0.1`)에만 바인딩됩니다.
 
 ```bash
 make build
@@ -171,7 +172,7 @@ Operator 사전 조건, image naming, 배포 순서는 [Kubernetes 가이드](do
 
 1. Docker Compose로 실행한 뒤 Kafka topic을 확인합니다.
 2. [schema.md](docs/schema.md)를 읽고 event contract를 이해합니다.
-3. `RiskRules`의 fraud threshold를 바꾸고 test를 실행합니다.
+3. `.env`의 `RISK_*` threshold를 바꾸고 서비스를 재시작해 결과를 비교합니다.
 4. raw, aggregate, alert, DLQ, replay topic을 비교합니다.
 5. `make cdc-up`, `make cdc-register`, `make cdc-update-merchant`로 reference data 변경이 알람 판단에 반영되는지 확인합니다.
 6. [operations-runbook.md](docs/operations-runbook.md)를 읽고 각 점검 항목이 실제 운영에서 어떤 의미인지 연결합니다.
@@ -201,10 +202,12 @@ Operator 사전 조건, image naming, 배포 순서는 [Kubernetes 가이드](do
 ```bash
 make test
 make test-python
-docker compose --profile schema --profile cdc --profile observability config
+docker compose --profile tools --profile schema --profile cdc --profile observability config
 make ci-smoke
 make ci-smoke-exactly-once
-python3 -m py_compile api/src/main.py common/python/realtime_lab/dlq_tools.py generator/src/producer.py replayer/src/replay_dlq.py
+python3 -m py_compile \
+  api/src/main.py cdc/register_postgres_connector.py common/python/realtime_lab/dlq_tools.py \
+  generator/src/producer.py replayer/src/replay_dlq.py scripts/*.py
 kubectl kustomize k8s/overlays/dev
 kubectl kustomize k8s/overlays/prod-like
 kubectl kustomize k8s/overlays/exactly-once
@@ -213,6 +216,7 @@ kubectl kustomize k8s/overlays/exactly-once
 ## 운영 적용 시 주의점
 
 이 저장소는 실행 가능한 학습·검증 환경이며 production platform 배포본은 아닙니다.
-Compose checkpoint는 named volume에 남지만 단일 Docker host 장애를 견디지 못합니다.
+Compose의 Kafka data, PostgreSQL data, Flink checkpoint는 named volume에 남지만 단일
+Docker host 장애를 견디지 못합니다.
 실제 배포에서는 Kafka 인증/TLS와 고가용성, 원격 checkpoint storage, secret manager,
 NetworkPolicy, schema compatibility gate, SLO와 alert routing을 별도로 설계해야 합니다.

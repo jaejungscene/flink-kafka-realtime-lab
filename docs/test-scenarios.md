@@ -151,7 +151,7 @@ curl "http://localhost:8000/topics/transactions.aggregates/messages?limit=10"
 
 기대 결과:
 
-- `aggregateType`은 `COUNTRY_CATEGORY_1M`입니다.
+- `aggregateType`은 `COUNTRY_CATEGORY_MERCHANT_1M`입니다.
 - `eventCount`, `totalAmount`, `avgAmount`, `avgFraudScore`가 포함됩니다.
 
 학습 포인트:
@@ -204,7 +204,8 @@ curl "http://localhost:8000/topics/transactions.dlq/messages?limit=10"
 
 - generator가 일부 이벤트의 `eventTime`을 과거로 밀어 넣습니다.
 - Flink job은 10초 out-of-orderness와 30초 allowed lateness를 둡니다.
-- 허용 범위를 넘은 이벤트는 late event로 DLQ에 기록됩니다.
+- 이벤트는 해당 1분 window의 종료 시각과 allowed lateness를 모두 지난 뒤에만
+  `LATE_EVENT`로 분류됩니다. 개별 event time에 30초만 더한 시점에 버리지 않습니다.
 
 확인:
 

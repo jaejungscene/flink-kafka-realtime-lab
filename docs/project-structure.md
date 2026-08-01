@@ -69,9 +69,9 @@ Flink job의 핵심 파일은
 1. `transactions.raw`와 `transactions.replay`를 함께 읽습니다.
 2. Kafka 좌표와 key/value를 `KafkaRecord`로 보존하고 `TransactionParser`에서 JSON parse와 validation을 수행합니다.
 3. parse/validation 실패는 side output으로 분리해 `transactions.dlq`로 보냅니다.
-4. 정상 이벤트에 `eventTime` watermark를 부여합니다.
-5. `merchant_risk_profiles` compacted topic을 earliest부터 읽고 Broadcast State로 유지합니다.
-6. transaction의 `merchantId`와 risk profile을 join해 fraud score multiplier와 manual review flag를 반영합니다.
+4. `merchant_risk_profiles` compacted topic을 earliest부터 읽고 Broadcast State로 유지합니다.
+5. transaction의 `merchantId`와 risk profile을 join해 fraud score multiplier와 manual review flag를 반영합니다.
+6. enrichment를 마친 정상 이벤트에 `eventTime` watermark를 부여합니다.
 7. 고위험 단건 이벤트는 `HIGH_RISK_TRANSACTION` 알람으로 보냅니다.
 8. 사용자별 1분 window에서 burst 조건을 판단해 `USER_PAYMENT_BURST` 알람을 만듭니다.
 9. 국가/카테고리/가맹점 기준 1분 집계를 `transactions.aggregates`로 보냅니다.
@@ -80,14 +80,14 @@ Flink job의 핵심 파일은
 
 ## Rule 구성
 
-알람 threshold는 `RiskRules`에 모아두었습니다.
+알람 threshold는 직렬화 가능한 `RiskRuleConfig`에 두고, `RiskRules`는 주입받은 설정으로
+판단만 수행합니다.
 
 | Rule | 의미 |
 | --- | --- |
 | `isHighRisk` | 단건 fraud score, amount, IP risk, payment status 기반 알람 |
 | `isBurst` | 사용자별 1분 window의 count/amount burst |
 | `isMerchantAnomaly` | 가맹점별 1분 window의 거래량/금액/평균 위험도 이상 |
-| `isReplayCandidate` | replay 가능한 DLQ 유형 구분 |
 
 이 구조 덕분에 Flink topology를 크게 바꾸지 않고도 rule test를 추가하거나 threshold를 조정할 수 있습니다.
 
@@ -98,11 +98,14 @@ Flink job의 핵심 파일은
 | 인자 | 기본값 | 의미 |
 | --- | ---: | --- |
 | `sourceStartupMode` | `LATEST` | transaction source를 처음 시작할 offset 정책 |
+| `sourceIsolationLevel` | `read_uncommitted` | Kafka transaction을 source에서 노출할 범위 |
+| `sinkDeliveryGuarantee` | `AT_LEAST_ONCE` | Kafka sink와 checkpoint 전달 보장 |
 | `watermarkDelaySeconds` | `10` | 허용하는 out-of-order 범위 |
-| `allowedLatenessSeconds` | `30` | watermark 이후 추가로 허용할 지연 |
+| `allowedLatenessSeconds` | `30` | window 종료 watermark 이후 추가로 유지할 시간 |
 | `sourceIdleTimeoutSeconds` | `30` | 유휴 partition이 watermark를 막지 않게 하는 시간 |
 | `maxFutureSkewSeconds` | `300` | 허용 가능한 미래 event time 상한 |
 | `transactionalIdPrefix` | `realtime-lab` | exactly-once Kafka transaction namespace |
+| `risk*` | `.env.example` 참고 | TaskManager에 전달되는 위험 규칙 임계값 |
 
 `JobConfig`는 알 수 없는 인자, 중복 인자, 잘못된 범위와 topic 이름 충돌을 시작 시점에
 거부합니다.

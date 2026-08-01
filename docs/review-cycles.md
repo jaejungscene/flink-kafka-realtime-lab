@@ -1,6 +1,7 @@
 # 전체 품질 검토 기록
 
-이 문서는 저장소를 10개 관점으로 나누어 검토하고 수정한 결과를 기록합니다.
+이 문서는 저장소를 10개 관점으로 나누어 수행한 1차 검토와, 같은 기준을 다시 적용한
+2차 전수 검토, 작은 경계와 표현까지 다시 확인한 3차 세부 검토 결과를 기록합니다.
 단순히 기능 목록을 나열하지 않고, 발견한 위험과 실제 변경 사항, 남아 있는 한계를
 구분합니다.
 
@@ -29,7 +30,8 @@
 
 - Kafka topic, partition, offset, timestamp, key, value를 `KafkaRecord`로 보존합니다.
 - DLQ와 replay event에 원본 좌표를 전달합니다.
-- alert ID를 rule/window/key/sample event 기반의 결정적 UUID로 생성합니다.
+- 단건 alert ID는 source event를 포함하고, window alert ID는 rule/window/key를 사용하는
+  결정적 UUID로 생성합니다.
 
 ## 3. Event time과 late data
 
@@ -134,7 +136,8 @@ plugin, 인증, TLS, NetworkPolicy가 없으므로 production manifest로 간주
 수정:
 
 - `READABLE_TOPICS` allowlist와 선택적 `API_TOKEN` 인증을 추가했습니다.
-- K8s token은 optional Secret에서 읽고, 로컬 비밀번호는 `.env`로 덮어쓸 수 있습니다.
+- K8s base는 선택적 Secret을 읽고 prod-like overlay는 token Secret을 필수로 요구합니다.
+  로컬 비밀번호는 `.env`로 덮어쓸 수 있습니다.
 - Debezium connector 비밀번호는 Kafka Connect `EnvVarConfigProvider`로 주입합니다.
 - producer는 idempotence와 delivery callback을 사용하고 실패를 성공으로 보고하지 않습니다.
 
@@ -148,17 +151,148 @@ plugin, 인증, TLS, NetworkPolicy가 없으므로 production manifest로 간주
   별도임을 명시했습니다.
 - 로컬 실행 구성, 검토용 `prod-like` overlay, 실제 production 요구사항을 구분했습니다.
 
+## 2차 전수 검토: 11–20
+
+### 11. 빌드 경계와 저장소 위생
+
+- root, Flink, generator build context에 `.dockerignore`를 추가해 `.git`, 문서, 로컬
+  산출물이 이미지 빌드로 전달되지 않게 했습니다.
+- Make target 선언과 test image 정리를 일관되게 정리했습니다.
+
+### 12. JSON과 Avro 계약 일치
+
+- Avro 예제에만 있던 `schemaVersion`을 transaction, alert, aggregate, DLQ 실제 JSON에도
+  포함했습니다.
+- event/user/merchant 식별자의 공백과 길이, 잘못된 schema version을 입력 경계에서
+  검증합니다.
+
+### 13. Window late cutoff와 결정적 결과
+
+- event time에 allowed lateness만 더해 너무 일찍 버리던 로직을 window cleanup deadline
+  기준으로 수정했습니다.
+- 세 window의 late side output에서 같은 event가 중복 DLQ로 갈 가능성을 제거했습니다.
+- window alert ID는 late update로 sample event가 바뀌어도 안정적으로 유지됩니다.
+
+### 14. 전달 보장과 규칙 설정 주입
+
+- 환경변수 static field에 의존하던 위험 임계값을 직렬화 가능한 `RiskRuleConfig`로 바꿔
+  JobManager에서 검증한 값이 TaskManager에 그대로 전달되게 했습니다.
+- Kafka source isolation level을 명시하고 exactly-once에서 `read_committed`가 아니면
+  시작을 거부합니다.
+- sink guarantee와 Flink checkpoint mode를 작업 코드에서 같은 모드로 맞춥니다.
+
+### 15. Replay 정책 대칭성
+
+- Flink parser와 replay helper가 같은 미래 시각, 식별자 타입, schema version 범위를
+  적용합니다.
+- 잘못된 미래 event가 replay와 DLQ 사이를 반복하거나 불명확한 실행 ID가 audit key에
+  들어가는 것을 차단합니다.
+
+### 16. API 계약과 실패 응답
+
+- Pydantic request의 알 수 없는 field를 거부하고 query limit/timeout에 상한을 둡니다.
+- 선택된 DLQ record는 중간 offset을 전부 훑지 않고 각 exact offset에서 직접 읽습니다.
+- Kafka client 오류는 내부 예외를 노출하지 않는 일관된 `503` 응답으로 변환합니다.
+
+### 17. CDC 등록 경로
+
+- Kafka Connect `PUT /config` endpoint에 잘못된 wrapper JSON을 보내던 문제를
+  평면 connector config로 수정했습니다.
+- 등록 도구가 connector와 모든 task의 `RUNNING` 상태를 확인하고 실패 trace를
+  보고하도록 보강했습니다.
+
+### 18. 로컬·Kubernetes 운영 경계
+
+- Compose port를 `127.0.0.1`에만 바인딩하고 Kafka/PostgreSQL data volume과 PostgreSQL
+  readiness를 추가했습니다.
+- exactly-once K8s overlay의 API consumer도 `read_committed`를 사용하며, prod-like API는
+  token Secret을 필수로 요구합니다.
+
+### 19. Metric 의미와 CI 공백
+
+- gauge에 `_total`을 붙이던 중복 metric을 제거하고 topic 합계는 PromQL로 계산합니다.
+- 구성 topic 누락 alert, Ruff, at-least-once/exactly-once E2E matrix, CDC connector smoke를
+  CI 품질 게이트에 추가했습니다.
+
+### 20. 문서 정합성
+
+- source isolation, window cleanup 기준, replay 미래 시각 정책, CDC PUT payload, named
+  volume과 localhost 노출 경계를 실제 구현과 맞췄습니다.
+- stable replay ID가 Kafka 발행 자체의 멱등성을 보장하지 않는다는 한계를 명시했습니다.
+
+## 3차 세부 검토: 21–30
+
+### 21. 저장소와 빌드 컨텍스트
+
+- Ruff cache와 coverage 산출물을 Git 및 Docker build context에서 제외했습니다.
+- Makefile의 Kafka Compose 명령이 공통 `COMPOSE` 설정을 재사용하도록 정리했습니다.
+
+### 22. Python 설정 경계
+
+- Generator와 Replayer도 공백 Kafka 주소·topic·consumer group을 시작 단계에서
+  거부합니다.
+- isolation level 정규화, Python 3.12 UTC 표현, immutable 상수 표현을 통일했습니다.
+
+### 23. API HTTP 계약
+
+- DLQ topic이 API allowlist에서 빠진 설정을 시작 단계에서 거부합니다.
+- 선택 offset의 존재하지 않는 partition은 Kafka 연결 실패와 구분된 `404`로 반환하고,
+  timeout은 시스템 시각 변경에 영향받지 않는 단조 시계로 계산합니다.
+- Kafka 상세 오류는 서버 로그에만 남기고 클라이언트에는 일반화된 오류를 반환합니다.
+
+### 24. DLQ 요약 경계
+
+- 사용하지 않던 replay run ID 인자와 무의미한 summary UUID 생성을 제거했습니다.
+- 빈 error type/reason 표시를 `UNKNOWN`으로 통일하고 음수 sample limit을 거부합니다.
+
+### 25. Java parser 일관성
+
+- 정상 snake_case CDC 필드가 있어도 잘못된 camelCase 별칭을 먼저 평가하던 eager
+  fallback을 제거했습니다.
+- CDC 문자열 타입, 음수 future-skew와 payment status 공백을 입력 경계에서 검증합니다.
+
+### 26. 집계 의미와 결정성
+
+- 가맹점 차원을 포함하는 실제 key에 맞게 aggregate type을
+  `COUNTRY_CATEGORY_MERCHANT_1M`으로 수정했습니다.
+- 집계 차원값을 trim해 공백 차이로 별도 key가 만들어지지 않도록 했습니다.
+
+### 27. Compose 재실행 안전성
+
+- 이미 같은 이름의 Flink job이 `RUNNING`이면 submit container가 중복 job을 제출하지
+  않고 정상 종료합니다.
+- Generator에 전달되지만 사용되지 않던 isolation 환경변수를 제거했습니다.
+
+### 28. CDC와 도구 진단
+
+- 사용자가 명시한 connector config 경로가 잘못되면 기본 파일로 조용히 대체하지 않고
+  fail-fast 처리합니다.
+- connector JSON 객체/class, finite API timeout과 replay deadline 계산을 보강했습니다.
+
+### 29. CI와 경보 사각지대
+
+- CDC smoke가 connector 상태뿐 아니라 실제 초기 snapshot Kafka 레코드까지 검증합니다.
+- API metrics endpoint 자체가 scrape되지 않을 때를 `up` metric으로 감지합니다.
+
+### 30. 문서 세부 정합성
+
+- `cdc-up`과 `cdc-register`의 실제 책임, CDC enrichment와 watermark 적용 순서를 코드와
+  맞췄습니다.
+- 집계 type, CDC CI 검증 범위, API scrape 경보와 세 번째 검토 결과를 문서화했습니다.
+
 ## 검증 기준
 
 변경 완료 후 다음을 함께 통과해야 합니다.
 
 - Java unit test와 shaded JAR build
-- Python helper/API contract test
+- Python helper/API contract test와 Ruff
 - Python compile, shell syntax, JSON/Avro JSON 구문 검사
 - Docker Compose 전체 profile 렌더링
 - Prometheus config/rule 검사
 - Kubernetes dev, exactly-once, prod-like overlay 렌더링
-- Kafka → Flink → alert/aggregate/DLQ → replay Compose E2E smoke test
+- Kafka → Flink → alert/aggregate/DLQ → replay Compose E2E를 at-least-once와
+  exactly-once에서 각각 실행
+- PostgreSQL → Debezium → Kafka connector/task와 초기 snapshot record smoke test
 
 이 검증은 회귀를 줄이는 장치이지 성능, 보안, 고가용성, 데이터 정확성에 대한 production
 인증은 아닙니다.

@@ -18,6 +18,7 @@
 
 ```json
 {
+  "schemaVersion": 1,
   "eventId": "8d6296df-8fdf-49fe-87a2-cf9476f54f3d",
   "userId": "user-001",
   "merchantId": "merchant-07",
@@ -46,6 +47,7 @@
 - `userId`
 - `eventTime`
 - `amount >= 0`
+- `schemaVersion >= 1`
 
 `replay*` field는 `transactions.replay`에서만 붙을 수 있는 audit metadata입니다.
 자동 replay는 기존 `userId`, `eventTime`, 유효한 숫자 값을 보존하며, 비어 있는
@@ -61,6 +63,7 @@
 
 ```json
 {
+  "schemaVersion": 1,
   "alertId": "26a0b4c6-4f02-44e8-88c1-271a203d2a65",
   "alertType": "HIGH_RISK_TRANSACTION",
   "severity": "CRITICAL",
@@ -79,7 +82,8 @@
 
 ```json
 {
-  "aggregateType": "COUNTRY_CATEGORY_1M",
+  "schemaVersion": 1,
+  "aggregateType": "COUNTRY_CATEGORY_MERCHANT_1M",
   "key": "KR|electronics|merchant-07",
   "windowStart": 1760000000000,
   "windowEnd": 1760000060000,
@@ -94,6 +98,7 @@
 
 ```json
 {
+  "schemaVersion": 1,
   "errorType": "PARSE_OR_VALIDATION_ERROR",
   "reason": "eventId is required",
   "sourceTopic": "transactions.raw",

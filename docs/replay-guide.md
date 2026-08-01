@@ -36,7 +36,9 @@ API endpoint 상세는 [DLQ Summary/Replay API 실습](dlq-replay-api-guide.md)�
 
 - `rawValue`가 유효한 JSON object입니다.
 - `userId`, 양수 epoch millis `eventTime`, 유한한 음수 아닌 `amount`가 보존되어 있습니다.
+- `eventTime`은 현재 시각보다 설정된 미래 허용 범위를 넘지 않습니다.
 - `mlFraudScore`와 `ipRisk`가 있으면 각각 `0..1`, `0..100` 범위입니다.
+- 식별자는 문자열이고 `schemaVersion`은 양의 정수입니다.
 - 비어 있는 `eventId`는 source DLQ topic/partition/offset으로 결정적으로 생성합니다.
 - replay run과 source offset metadata를 추가합니다.
 

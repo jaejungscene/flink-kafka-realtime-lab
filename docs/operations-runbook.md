@@ -92,8 +92,11 @@ curl http://localhost:8083/connectors
 
 ### Kafka Connect connector 등록 실패
 
-- `make cdc-up` 이후 Connect REST API가 준비될 때까지 잠시 기다립니다.
+- `make cdc-up`으로 PostgreSQL과 Kafka Connect를 먼저 시작했는지 확인합니다.
+- `make cdc-register`를 실행해 connector와 task의 최종 상태를 함께 확인합니다.
 - `curl http://localhost:8083/connectors`를 확인합니다.
+- `curl http://localhost:8083/connectors/merchant-risk-profiles-source/status`에서
+  connector와 모든 task가 `RUNNING`인지 확인합니다.
 - PostgreSQL container가 실행 중인지 `docker compose ps postgres`로 확인합니다.
 - `merchant_risk_profiles` topic은 compacted topic이어야 합니다.
 - Flink job은 이 topic을 earliest부터 읽어 Broadcast State를 구성합니다.
