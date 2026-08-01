@@ -10,8 +10,10 @@ COPY common/python/realtime_lab ./realtime_lab
 FROM base AS test
 COPY api/requirements-test.txt .
 RUN pip install --no-cache-dir -r requirements-test.txt
+COPY pyproject.toml .
 COPY api/tests ./tests
-RUN PYTHONPATH=/app python -m unittest discover -s tests
+RUN ruff check src realtime_lab tests \
+    && PYTHONPATH=/app python -m unittest discover -s tests
 
 FROM base AS runtime
 RUN useradd --create-home --shell /usr/sbin/nologin appuser \
