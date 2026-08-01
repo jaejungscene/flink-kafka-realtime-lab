@@ -9,6 +9,15 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+
+class KafkaConnectHttpError(RuntimeError):
+    def __init__(self, status_code: int, path: str, detail: str) -> None:
+        self.status_code = status_code
+        super().__init__(
+            f"Kafka Connect returned HTTP {status_code} for {path}: {detail}"
+        )
+
+
 CONNECT_URL = os.getenv("CONNECT_URL", "http://localhost:8083").strip().rstrip("/")
 CONNECTOR_NAME = os.getenv(
     "CONNECTOR_NAME", "merchant-risk-profiles-source"
@@ -41,9 +50,7 @@ def request(method: str, path: str, payload: dict[str, Any] | None = None) -> An
             body = response.read()
     except urllib.error.HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace")
-        raise RuntimeError(
-            f"Kafka Connect returned HTTP {error.code} for {path}: {detail}"
-        ) from error
+        raise KafkaConnectHttpError(error.code, path, detail) from error
     return None if not body else json.loads(body)
 
 
@@ -60,7 +67,13 @@ def wait_until_ready() -> None:
 def wait_until_running(connector_path: str) -> dict[str, Any]:
     latest: dict[str, Any] = {}
     for _ in range(60):
-        latest = request("GET", f"{connector_path}/status")
+        try:
+            latest = request("GET", f"{connector_path}/status")
+        except KafkaConnectHttpError as error:
+            if error.status_code != 404:
+                raise
+            time.sleep(2)
+            continue
         connector_state = latest.get("connector", {}).get("state")
         task_states = [task.get("state") for task in latest.get("tasks", [])]
         if connector_state == "FAILED" or "FAILED" in task_states:
