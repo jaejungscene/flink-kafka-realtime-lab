@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import math
 import os
 import secrets
@@ -12,10 +13,16 @@ from typing import Annotated, Any
 
 from confluent_kafka import Consumer, KafkaException, Producer, TopicPartition
 from confluent_kafka.admin import AdminClient
-from fastapi import Depends, FastAPI, Header, HTTPException, Response
-from pydantic import BaseModel, Field
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field
 
-from realtime_lab.dlq_tools import normalize_for_replay, summarize_dlq_records, to_dlq_sample
+from realtime_lab.dlq_tools import (
+    REPLAY_RUN_ID_PATTERN,
+    normalize_for_replay,
+    summarize_dlq_records,
+    to_dlq_sample,
+)
 
 
 def _non_negative_float_setting(name: str, fallback: float) -> float:
@@ -38,39 +45,56 @@ def _topic_list_setting(name: str, fallback: str) -> tuple[str, ...]:
     return topics
 
 
-BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092").strip()
-KAFKA_ISOLATION_LEVEL = os.getenv("KAFKA_ISOLATION_LEVEL", "read_uncommitted")
+def _non_blank_setting(name: str, fallback: str) -> str:
+    value = os.getenv(name, fallback).strip()
+    if not value:
+        raise RuntimeError(f"{name} must not be blank")
+    return value
+
+
+BOOTSTRAP_SERVERS = _non_blank_setting("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092")
+KAFKA_ISOLATION_LEVEL = _non_blank_setting(
+    "KAFKA_ISOLATION_LEVEL", "read_uncommitted"
+).lower()
 METRIC_TOPICS = _topic_list_setting(
     "METRIC_TOPICS",
     "transactions.raw,transactions.replay,transactions.aggregates,alerts.fraud,"
     "transactions.dlq,merchant_risk_profiles",
 )
-FLINK_CONSUMER_GROUP = os.getenv("FLINK_CONSUMER_GROUP", "flink-realtime-lab")
-DLQ_TOPIC = os.getenv("DLQ_TOPIC", "transactions.dlq")
-REPLAY_TOPIC = os.getenv("REPLAY_TOPIC", "transactions.replay")
+FLINK_CONSUMER_GROUP = _non_blank_setting("FLINK_CONSUMER_GROUP", "flink-realtime-lab")
+DLQ_TOPIC = _non_blank_setting("DLQ_TOPIC", "transactions.dlq")
+REPLAY_TOPIC = _non_blank_setting("REPLAY_TOPIC", "transactions.replay")
 READABLE_TOPICS = frozenset(_topic_list_setting("READABLE_TOPICS", ",".join(METRIC_TOPICS)))
 METRICS_CACHE_SECONDS = _non_negative_float_setting("METRICS_CACHE_SECONDS", 10.0)
-API_TOKEN = os.getenv("API_TOKEN", "")
+MAX_FUTURE_SKEW_MILLIS = int(
+    _non_negative_float_setting("MAX_FUTURE_SKEW_SECONDS", 300.0) * 1000
+)
+API_TOKEN = os.getenv("API_TOKEN", "").strip()
 
-if not BOOTSTRAP_SERVERS:
-    raise RuntimeError("KAFKA_BOOTSTRAP_SERVERS must not be blank")
 if KAFKA_ISOLATION_LEVEL not in {"read_committed", "read_uncommitted"}:
     raise RuntimeError("KAFKA_ISOLATION_LEVEL must be read_committed or read_uncommitted")
 if DLQ_TOPIC == REPLAY_TOPIC:
     raise RuntimeError("DLQ_TOPIC and REPLAY_TOPIC must be different")
+if DLQ_TOPIC not in READABLE_TOPICS:
+    raise RuntimeError("DLQ_TOPIC must be included in READABLE_TOPICS")
 
 _metrics_lock = threading.Lock()
 _metrics_cache: tuple[float, str] | None = None
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Flink KRaft Realtime Lab API", version="1.0.0")
 
 
 class DlqRecordRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     partition: int = Field(ge=0)
     offset: int = Field(ge=0)
 
 
 class DlqReplayRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     max_messages: int = Field(default=20, ge=1, le=200)
     scan_limit: int = Field(default=200, ge=1, le=1000)
     timeout_seconds: float = Field(default=8.0, ge=1.0, le=30.0)
@@ -79,7 +103,7 @@ class DlqReplayRequest(BaseModel):
     confirm: bool = False
     replay_run_id: str | None = Field(
         default=None,
-        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{2,79}$",
+        pattern=REPLAY_RUN_ID_PATTERN.pattern,
     )
     records: list[DlqRecordRef] = Field(default_factory=list, max_length=200)
 
@@ -89,6 +113,12 @@ def _require_api_token(
 ) -> None:
     if API_TOKEN and not secrets.compare_digest(x_api_token or "", API_TOKEN):
         raise HTTPException(status_code=401, detail="A valid X-API-Token header is required")
+
+
+@app.exception_handler(KafkaException)
+async def kafka_exception_handler(_request: Request, exception: KafkaException) -> JSONResponse:
+    logger.warning("Kafka request failed: %s", exception)
+    return JSONResponse(status_code=503, content={"detail": "Kafka request failed"})
 
 
 @app.get("/health")
@@ -109,7 +139,12 @@ def ready() -> dict[str, str]:
 def topics() -> dict[str, list[str]]:
     admin = AdminClient({"bootstrap.servers": BOOTSTRAP_SERVERS})
     metadata = admin.list_topics(timeout=5)
-    return {"topics": sorted(READABLE_TOPICS.intersection(metadata.topics.keys()))}
+    available_topics = (
+        topic
+        for topic in READABLE_TOPICS
+        if topic in metadata.topics and metadata.topics[topic].error is None
+    )
+    return {"topics": sorted(available_topics)}
 
 
 @app.get("/metrics")
@@ -184,7 +219,6 @@ def _collect_kafka_metrics() -> str:
 
             lines.append(f'realtime_lab_kafka_topic_available{{topic="{topic_label}"}} 1')
             partitions = sorted(topic_meta.partitions.keys())
-            topic_total = 0
             topic_partitions = [TopicPartition(topic, partition) for partition in partitions]
             try:
                 committed = {
@@ -205,7 +239,6 @@ def _collect_kafka_metrics() -> str:
                     continue
 
                 message_count = max(high - low, 0)
-                topic_total += message_count
                 labels = f'topic="{topic_label}",partition="{partition}"'
                 lines.append(
                     f"realtime_lab_kafka_topic_retained_records{{{labels}}} {message_count}"
@@ -221,10 +254,6 @@ def _collect_kafka_metrics() -> str:
                     )
                     lines.append(f"realtime_lab_kafka_consumer_lag{{{group_labels}}} {lag}")
 
-            lines.append(
-                f'realtime_lab_kafka_topic_retained_records_total{{topic="{topic_label}"}} '
-                f"{topic_total}"
-            )
     finally:
         consumer.close()
 
@@ -239,20 +268,11 @@ def _prometheus_label(value: str) -> str:
 @app.get("/topics/{topic}/messages", dependencies=[Depends(_require_api_token)])
 def read_messages(
     topic: str,
-    limit: int = 20,
-    timeout_seconds: float = 4.0,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 20,
+    timeout_seconds: Annotated[float, Query(ge=0.1, le=30.0)] = 4.0,
     from_beginning: bool = False,
 ) -> dict[str, Any]:
-    _ensure_readable_topic(topic)
-    if limit < 1 or limit > 1000:
-        raise HTTPException(status_code=400, detail="limit must be between 1 and 1000")
-
-    admin = AdminClient({"bootstrap.servers": BOOTSTRAP_SERVERS})
-    metadata = admin.list_topics(topic=topic, timeout=5)
-    if topic not in metadata.topics or metadata.topics[topic].error is not None:
-        raise HTTPException(status_code=404, detail=f"topic not found: {topic}")
-
-    partitions = list(metadata.topics[topic].partitions.keys())
+    partitions = _topic_partitions(topic)
     consumer = Consumer(
         {
             "bootstrap.servers": BOOTSTRAP_SERVERS,
@@ -273,10 +293,10 @@ def read_messages(
             offsets.append(TopicPartition(topic, partition, start_offset))
 
         consumer.assign(offsets)
-        deadline = time.time() + timeout_seconds
+        deadline = time.monotonic() + timeout_seconds
         messages: list[dict[str, Any]] = []
 
-        while len(messages) < limit and time.time() < deadline:
+        while len(messages) < limit and time.monotonic() < deadline:
             msg = consumer.poll(0.2)
             if msg is None:
                 continue
@@ -302,6 +322,16 @@ def read_records_at_offsets(
             status_code=400,
             detail="records must not contain duplicate partition/offset pairs",
         )
+    if not records:
+        return []
+
+    partitions = set(_topic_partitions(topic))
+    missing_partitions = sorted({record.partition for record in records} - partitions)
+    if missing_partitions:
+        raise HTTPException(
+            status_code=404,
+            detail=f"topic partitions not found: {missing_partitions}",
+        )
 
     consumer = Consumer(
         {
@@ -312,10 +342,14 @@ def read_records_at_offsets(
         }
     )
     try:
-        first_offsets: dict[int, int] = {}
+        retained_ranges: dict[int, tuple[int, int]] = {}
         for partition, offset in requested:
-            topic_partition = TopicPartition(topic, partition)
-            low, high = consumer.get_watermark_offsets(topic_partition, timeout=5)
+            if partition not in retained_ranges:
+                retained_ranges[partition] = consumer.get_watermark_offsets(
+                    TopicPartition(topic, partition),
+                    timeout=5,
+                )
+            low, high = retained_ranges[partition]
             if offset < low or offset >= high:
                 raise HTTPException(
                     status_code=404,
@@ -324,33 +358,28 @@ def read_records_at_offsets(
                         f"({low}..{high - 1})"
                     ),
                 )
-            first_offsets[partition] = min(first_offsets.get(partition, offset), offset)
-
-        consumer.assign(
-            [
-                TopicPartition(topic, partition, offset)
-                for partition, offset in first_offsets.items()
-            ]
-        )
-        deadline = time.time() + timeout_seconds
-        found: dict[tuple[int, int], dict[str, Any]] = {}
-        while len(found) < len(requested) and time.time() < deadline:
-            msg = consumer.poll(0.2)
-            if msg is None:
-                continue
-            if msg.error():
-                raise KafkaException(msg.error())
-            key = (msg.partition(), msg.offset())
-            if key in requested:
-                found[key] = _message_to_dict(msg)
-
-        missing = sorted(requested - set(found))
-        if missing:
-            raise HTTPException(
-                status_code=404,
-                detail=f"selected DLQ records were not readable: {missing}",
-            )
-        return [found[(record.partition, record.offset)] for record in records]
+        deadline = time.monotonic() + timeout_seconds
+        found: list[dict[str, Any]] = []
+        for record in records:
+            consumer.assign([TopicPartition(topic, record.partition, record.offset)])
+            while time.monotonic() < deadline:
+                msg = consumer.poll(0.2)
+                if msg is None:
+                    continue
+                if msg.error():
+                    raise KafkaException(msg.error())
+                if msg.partition() == record.partition and msg.offset() == record.offset:
+                    found.append(_message_to_dict(msg))
+                    break
+            else:
+                raise HTTPException(
+                    status_code=404,
+                    detail=(
+                        "selected DLQ record was not readable: "
+                        f"{topic}[{record.partition}]@{record.offset}"
+                    ),
+                )
+        return found
     finally:
         consumer.close()
 
@@ -394,22 +423,32 @@ def _ensure_readable_topic(topic: str) -> None:
         raise HTTPException(status_code=404, detail="topic is not exposed by this API")
 
 
+def _topic_partitions(topic: str) -> list[int]:
+    _ensure_readable_topic(topic)
+    admin = AdminClient({"bootstrap.servers": BOOTSTRAP_SERVERS})
+    metadata = admin.list_topics(topic=topic, timeout=5)
+    topic_metadata = metadata.topics.get(topic)
+    if topic_metadata is None or topic_metadata.error is not None:
+        raise HTTPException(status_code=404, detail=f"topic not found: {topic}")
+    return sorted(topic_metadata.partitions)
+
+
 @app.get("/dlq/summary", dependencies=[Depends(_require_api_token)])
 def dlq_summary(
-    limit: int = 200,
-    timeout_seconds: float = 6.0,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 200,
+    timeout_seconds: Annotated[float, Query(ge=0.1, le=30.0)] = 6.0,
     from_beginning: bool = True,
 ) -> dict[str, Any]:
-    if limit < 1 or limit > 1000:
-        raise HTTPException(status_code=400, detail="limit must be between 1 and 1000")
-
     result = read_messages(
         DLQ_TOPIC,
         limit=limit,
         timeout_seconds=timeout_seconds,
         from_beginning=from_beginning,
     )
-    summary = summarize_dlq_records(result["messages"])
+    summary = summarize_dlq_records(
+        result["messages"],
+        max_future_skew_millis=MAX_FUTURE_SKEW_MILLIS,
+    )
     return {
         "topic": DLQ_TOPIC,
         "scanLimit": limit,
@@ -429,7 +468,7 @@ def replay_dlq(request: DlqReplayRequest) -> dict[str, Any]:
         if not request.replay_run_id:
             raise HTTPException(
                 status_code=400,
-                detail="replay_run_id is required for idempotent execution",
+                detail="replay_run_id is required to keep retry identifiers stable",
             )
         if not request.records:
             raise HTTPException(
@@ -453,6 +492,7 @@ def replay_dlq(request: DlqReplayRequest) -> dict[str, Any]:
     delivery_errors: list[str] = []
     replayed: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
+    replay_time = int(time.time() * 1000)
 
     if not request.dry_run:
         producer = Producer(
@@ -486,9 +526,17 @@ def replay_dlq(request: DlqReplayRequest) -> dict[str, Any]:
             int(record.get("partition") or 0),
             int(record.get("offset") or 0),
             replay_run_id,
+            current_time_millis=replay_time,
+            max_future_skew_millis=MAX_FUTURE_SKEW_MILLIS,
         )
         if event is None:
-            skipped.append(to_dlq_sample(record, replay_run_id))
+            skipped.append(
+                to_dlq_sample(
+                    record,
+                    current_time_millis=replay_time,
+                    max_future_skew_millis=MAX_FUTURE_SKEW_MILLIS,
+                )
+            )
             continue
 
         replayed.append(
@@ -516,12 +564,14 @@ def replay_dlq(request: DlqReplayRequest) -> dict[str, Any]:
     if producer is not None:
         undelivered = producer.flush(10)
         if undelivered or delivery_errors:
+            logger.error(
+                "Kafka replay delivery failed: undelivered=%s errors=%s",
+                undelivered,
+                delivery_errors[:3],
+            )
             raise HTTPException(
                 status_code=502,
-                detail=(
-                    f"Kafka replay delivery failed: undelivered={undelivered}, "
-                    f"errors={delivery_errors[:3]}"
-                ),
+                detail="Kafka replay delivery failed",
             )
 
     return {
