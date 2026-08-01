@@ -9,7 +9,6 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-
 CONNECT_URL = os.getenv("CONNECT_URL", "http://localhost:8083").strip().rstrip("/")
 CONNECTOR_NAME = os.getenv(
     "CONNECTOR_NAME", "merchant-risk-profiles-source"

@@ -7,7 +7,6 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-
 API_URL = os.getenv("API_URL", "http://localhost:8000").strip().rstrip("/")
 
 

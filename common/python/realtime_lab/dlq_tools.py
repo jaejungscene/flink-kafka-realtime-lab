@@ -5,9 +5,8 @@ import math
 import re
 import uuid
 from collections import Counter, defaultdict
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import Any
-
 
 REPLAY_RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{2,79}$")
 DEFAULT_MAX_FUTURE_SKEW_MILLIS = 300_000

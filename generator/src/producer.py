@@ -3,7 +3,7 @@ import os
 import random
 import time
 import uuid
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
 from confluent_kafka import Producer
 

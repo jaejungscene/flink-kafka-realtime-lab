@@ -5,7 +5,6 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-
 SCHEMA_REGISTRY_URL = (
     os.getenv("SCHEMA_REGISTRY_URL", "http://localhost:8085").strip().rstrip("/")
 )
