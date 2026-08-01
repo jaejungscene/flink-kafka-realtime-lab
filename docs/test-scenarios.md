@@ -1,6 +1,8 @@
 # 테스트 시나리오
 
-이 문서는 이 프로젝트로 실험할 수 있는 스트리밍 처리 시나리오를 설명합니다. 각 시나리오는 학습자가 직접 topic을 관찰하면서 Flink/Kafka의 핵심 개념을 이해하도록 설계되어 있습니다.
+이 문서는 topic과 API 응답을 직접 확인하며 주요 처리 경로를 검증하는 시나리오를
+정리합니다. 임계값은 기본 환경변수 기준이며 성능 기준선이나 fraud 모델 품질을
+의미하지 않습니다.
 
 ## 준비
 
@@ -47,7 +49,7 @@ curl "http://localhost:8000/topics/alerts.fraud/messages?limit=10"
 기대 결과:
 
 - `alertType`이 `HIGH_RISK_TRANSACTION`인 메시지가 `alerts.fraud`에 생성됩니다.
-- `metricValue`에는 fraud score가 들어갑니다.
+- `metricName=effectiveFraudScore`이고 `metricValue`에 해당 score가 들어갑니다.
 - `sampleEventId`로 원천 이벤트와 연결할 수 있습니다.
 
 학습 포인트:
@@ -149,7 +151,7 @@ curl "http://localhost:8000/topics/transactions.aggregates/messages?limit=10"
 
 기대 결과:
 
-- `aggregateType`은 `COUNTRY_CATEGORY_1M`입니다.
+- `aggregateType`은 `COUNTRY_CATEGORY_MERCHANT_1M`입니다.
 - `eventCount`, `totalAmount`, `avgAmount`, `avgFraudScore`가 포함됩니다.
 
 학습 포인트:
@@ -188,7 +190,8 @@ curl "http://localhost:8000/topics/transactions.dlq/messages?limit=10"
 
 학습 포인트:
 
-- Kafka source에서 바로 POJO 역직렬화를 하지 않고 string으로 받은 뒤 Flink 내부에서 parse하면 DLQ 처리가 쉬워집니다.
+- Kafka envelope를 먼저 보존한 뒤 Flink 내부에서 parse하면 실패한 source
+  topic/partition/offset과 원문을 함께 DLQ에 기록할 수 있습니다.
 - DLQ는 단순 쓰레기통이 아니라 replay와 remediation의 출발점입니다.
 
 ## 시나리오 6: Late Event 처리
@@ -201,7 +204,8 @@ curl "http://localhost:8000/topics/transactions.dlq/messages?limit=10"
 
 - generator가 일부 이벤트의 `eventTime`을 과거로 밀어 넣습니다.
 - Flink job은 10초 out-of-orderness와 30초 allowed lateness를 둡니다.
-- 허용 범위를 넘은 이벤트는 late event로 DLQ에 기록됩니다.
+- 이벤트는 해당 1분 window의 종료 시각과 allowed lateness를 모두 지난 뒤에만
+  `LATE_EVENT`로 분류됩니다. 개별 event time에 30초만 더한 시점에 버리지 않습니다.
 
 확인:
 
@@ -216,14 +220,16 @@ curl "http://localhost:8000/topics/transactions.dlq/messages?limit=20"
 
 학습 포인트:
 
-- late event를 무조건 버릴지, 별도 topic으로 보낼지, 보정 후 replay할지는 도메인 결정입니다.
+- late event를 버릴지, 별도 backfill로 보낼지, window를 다시 계산할지는 도메인
+  결정입니다. 이 lab의 자동 replay 대상에는 late event가 포함되지 않습니다.
 - 정확성과 지연 시간은 tradeoff입니다.
 
 ## 시나리오 7: DLQ Summary/Replay API
 
 목적:
 
-- DLQ 원인을 요약하고, replay 대상을 미리 본 뒤, 보정 가능한 record만 재처리하는 흐름을 확인합니다.
+- DLQ 원인을 요약하고, replay 대상을 미리 본 뒤, 안전성 검사를 통과한 record만
+  재처리하는 흐름을 확인합니다.
 
 실행:
 
@@ -243,21 +249,25 @@ curl -X POST "http://localhost:8000/dlq/replay" \
   -d '{"max_messages":5,"scan_limit":100,"dry_run":true}'
 curl -X POST "http://localhost:8000/dlq/replay" \
   -H "content-type: application/json" \
-  -d '{"max_messages":5,"scan_limit":100,"dry_run":false}'
+  -d '{"max_messages":1,"dry_run":false,"confirm":true,"replay_run_id":"api-preview-example","records":[{"partition":0,"offset":42}]}'
 curl "http://localhost:8000/topics/transactions.replay/messages?limit=10"
 ```
+
+수동 실행 예시의 run ID와 partition/offset은 바로 앞 preview 응답에 나온 값으로
+교체해야 합니다. 자동으로 연결하려면 `make dlq-replay-api`를 사용합니다.
 
 기대 결과:
 
 - `dlq-summary`에서 error type과 reason별 건수를 볼 수 있습니다.
 - `dlq-replay-preview`는 Kafka에 발행하지 않고 대상 offset만 보여줍니다.
-- 보정 가능한 DLQ record가 `transactions.replay`로 발행됩니다.
+- preview에서 선택한 안전한 DLQ record가 `transactions.replay`로 발행됩니다.
 - Flink job은 raw topic과 replay topic을 모두 읽기 때문에 replay record도 다시 처리 대상이 됩니다.
 
 학습 포인트:
 
 - replay를 raw topic에 직접 넣지 않고 별도 topic에 넣으면 lineage와 운영 추적이 쉬워집니다.
-- 실제 production에서는 replay 권한, audit log, ticket id, source DLQ offset을 함께 관리해야 합니다.
+- 실제 배포에서는 replay 권한, audit log, ticket id, source DLQ offset unique constraint를
+  함께 관리해야 합니다.
 
 ## 시나리오 8: Consumer Lag와 Checkpoint 확인
 
@@ -304,14 +314,14 @@ LOAD_RUN_SECONDS=300 LOAD_EVENTS_PER_SECOND=250 make load-experiment
 
 기대 결과:
 
-- `make load-snapshot` 출력에서 topic별 message count와 consumer lag를 볼 수 있습니다.
+- `make load-snapshot` 출력에서 topic별 보존 레코드 추정치와 consumer lag를 볼 수 있습니다.
 - Flink UI에서 busy/backpressure/checkpoint 상태를 함께 확인할 수 있습니다.
 - lag가 증가한 뒤 부하가 끝나면 줄어드는지 확인합니다.
 
 학습 포인트:
 
 - 처리량 문제는 Kafka partition, Flink parallelism, window/state, sink commit을 함께 봐야 합니다.
-- 로컬 단일 broker 결과를 production capacity로 일반화하면 안 됩니다.
+- 로컬 단일 broker 결과를 실제 용량 계획에 일반화하면 안 됩니다.
 
 ## 시나리오 9: Kubernetes Manifest 검증
 
@@ -333,12 +343,12 @@ kubectl kustomize k8s/overlays/prod-like
 - topic replication factor
 - Flink TaskManager 수
 - Flink upgrade mode
-- checkpoint path placeholder
+- object storage plugin과 인증이 필요한 checkpoint path placeholder
 
 학습 포인트:
 
 - 로컬 compose는 빠른 실험을 위한 환경입니다.
-- K8s manifests는 팀 운영과 GitOps 구조를 이해하기 위한 참고 자료입니다.
+- `prod-like`는 실제 배포본이 아니라 operator manifest 차이를 검토하는 참고 자료입니다.
 
 ## 시나리오 10: Schema Registry contract 확인
 
@@ -367,7 +377,7 @@ curl http://localhost:8085/subjects
 
 목적:
 
-- Prometheus/Grafana로 DLQ, alert, topic message count, consumer lag를 관찰합니다.
+- Prometheus/Grafana로 DLQ, alert, 보존 레코드 추정치, consumer lag를 관찰합니다.
 
 실행:
 
@@ -496,7 +506,7 @@ sed -n '1,200p' flink-sql/country_category_merchant_aggregate.sql
 7. `make observe-up`으로 Grafana dashboard 확인
 8. `make schema-register`로 schema contract 확인
 9. `make cdc-register`로 reference data CDC 확인
-10. K8s overlay를 render해 compose와 운영형 배포 차이 비교
+10. K8s overlay를 render해 Compose와 다중 노드 검토 구성의 차이 비교
 
 ## 결과가 안 보일 때
 

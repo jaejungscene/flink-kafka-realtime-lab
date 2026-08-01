@@ -11,6 +11,7 @@ spec:
     state.backend.type: hashmap
     execution.checkpointing.interval: "10000"
     execution.checkpointing.mode: AT_LEAST_ONCE
+    execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
     restart-strategy.type: fixed-delay
     restart-strategy.fixed-delay.attempts: "3"
     restart-strategy.fixed-delay.delay: 10 s
@@ -26,7 +27,7 @@ spec:
       cpu: 1
   job:
     jarURI: local:///opt/flink/usrlib/realtime-lab-flink-job.jar
-    entryClass: com.example.realtimelab.job.RealTimeAlertJob
+    entryClass: io.github.jaejungscene.realtimelab.job.RealTimeAlertJob
     parallelism: 2
     upgradeMode: stateless
     args:
@@ -46,6 +47,8 @@ spec:
       - transactions.dlq
       - --consumerGroup
       - flink-realtime-lab
+      - --sourceIsolationLevel
+      - read_uncommitted
       - --sinkDeliveryGuarantee
       - AT_LEAST_ONCE
       - --checkpointIntervalMillis
@@ -54,3 +57,27 @@ spec:
       - "10"
       - --allowedLatenessSeconds
       - "30"
+      - --sourceIdleTimeoutSeconds
+      - "30"
+      - --maxFutureSkewSeconds
+      - "300"
+      - --sourceStartupMode
+      - LATEST
+      - --transactionalIdPrefix
+      - realtime-lab-k8s
+      - --riskHighFraudScore
+      - "0.92"
+      - --riskHighAmount
+      - "1000.0"
+      - --riskHighIpRisk
+      - "80"
+      - --riskBurstCountThreshold
+      - "5"
+      - --riskBurstAmountThreshold
+      - "3000.0"
+      - --riskMerchantCountThreshold
+      - "25"
+      - --riskMerchantAmountThreshold
+      - "15000.0"
+      - --riskMerchantAvgFraudScoreThreshold
+      - "0.72"

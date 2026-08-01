@@ -15,6 +15,7 @@ make smoke
 docker compose ps
 curl http://localhost:8081/jobs
 curl http://localhost:8000/health
+curl http://localhost:8000/ready
 make topics
 make lag
 make load-snapshot
@@ -61,7 +62,7 @@ curl http://localhost:8083/connectors
 ### Consumer lag 증가
 
 - `make lag`를 실행합니다.
-- `make load-snapshot`으로 Flink vertex 상태와 topic별 message count를 함께 확인합니다.
+- `make load-snapshot`으로 Flink vertex 상태와 topic별 보존 레코드 추정치를 함께 확인합니다.
 - Flink parallelism을 늘리기 전에 Kafka partition 수를 먼저 확인합니다.
 - Flink UI에서 backpressure와 checkpoint failure를 확인합니다.
 
@@ -77,6 +78,8 @@ curl http://localhost:8083/connectors
 - `make dlq-summary`로 `reason`과 `errorType` 분포를 확인합니다.
 - `make dlq-replay-preview`로 replay 가능한 offset만 먼저 확인합니다.
 - `make dlq-replay-api`는 작은 `max_messages`부터 실행합니다.
+- `LATE_EVENT`와 `REFERENCE_DATA_PARSE_ERROR`, 의미를 추론해야 하는 잘못된 값은 자동
+  replay하지 않고 별도 backfill/remediation으로 처리합니다.
 - `REFERENCE_DATA_PARSE_ERROR`는 CDC profile payload가 기대 형식과 다른 경우입니다.
 - `make replay-dlq`는 API가 아닌 별도 tool container로 replay할 때 사용합니다.
 - Replay record에는 `replayId`, `replayRunId`, `replaySourceTopic`, `replaySourcePartition`, `replaySourceOffset` metadata가 추가됩니다.
@@ -89,8 +92,11 @@ curl http://localhost:8083/connectors
 
 ### Kafka Connect connector 등록 실패
 
-- `make cdc-up` 이후 Connect REST API가 준비될 때까지 잠시 기다립니다.
+- `make cdc-up`으로 PostgreSQL과 Kafka Connect를 먼저 시작했는지 확인합니다.
+- `make cdc-register`를 실행해 connector와 task의 최종 상태를 함께 확인합니다.
 - `curl http://localhost:8083/connectors`를 확인합니다.
+- `curl http://localhost:8083/connectors/merchant-risk-profiles-source/status`에서
+  connector와 모든 task가 `RUNNING`인지 확인합니다.
 - PostgreSQL container가 실행 중인지 `docker compose ps postgres`로 확인합니다.
 - `merchant_risk_profiles` topic은 compacted topic이어야 합니다.
 - Flink job은 이 topic을 earliest부터 읽어 Broadcast State를 구성합니다.
@@ -117,3 +123,5 @@ curl http://localhost:8083/connectors
 - Replay 권한과 audit trail을 정의합니다.
 - Kafka lag, Flink checkpoint failure, backpressure, restart count, end-to-end latency를 모니터링합니다.
 - CDC reference data join은 profile 변경 시점, TTL, schema evolution 정책까지 함께 설계합니다.
+- API에는 `API_TOKEN`, ingress 인증/인가, replay audit와 source offset dedup 저장소를
+  연결합니다.

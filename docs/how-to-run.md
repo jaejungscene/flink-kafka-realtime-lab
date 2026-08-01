@@ -9,8 +9,8 @@ Docker Compose는 가장 빠르게 프로젝트를 체험하는 방법입니다.
 ### 저장소 받기
 
 ```bash
-git clone https://github.com/jaejungscene/flink-kafka-realtime-lab.git
-cd flink-kafka-realtime-lab
+git clone https://github.com/jaejungscene/flink-kraft-realtime-lab.git
+cd flink-kraft-realtime-lab
 ```
 
 ### 사전 조건
@@ -18,6 +18,13 @@ cd flink-kafka-realtime-lab
 - Docker Desktop 또는 OrbStack 실행 중
 - `make`
 - 사용 포트가 비어 있어야 합니다.
+
+공유 환경에서는 `.env.example`을 `.env`로 복사하고 PostgreSQL/Grafana 비밀번호와
+`API_TOKEN`을 바꾸십시오. API token을 설정한 경우 topic/DLQ 요청에
+`X-API-Token` header가 필요합니다.
+모든 host port는 `127.0.0.1`에만 바인딩되며 다른 머신에 직접 노출되지 않습니다.
+`RISK_*` 값은 `flink-submit` 인자로 변환되어 TaskManager가 실행할 규칙 설정에
+포함됩니다.
 
 | 포트 | 서비스 |
 | ---: | --- |
@@ -62,6 +69,7 @@ make up
 docker compose ps
 curl http://localhost:8081/jobs
 curl http://localhost:8000/health
+curl http://localhost:8000/ready
 make topics
 ```
 
@@ -119,7 +127,7 @@ make consume-replay
 
 - `dlq-summary`에서 error type, reason, replay 가능 수를 확인합니다.
 - `dlq-replay-preview`는 Kafka에 발행하지 않고 replay 대상만 보여줍니다.
-- `dlq-replay-api`는 보정 가능한 record를 `transactions.replay`로 발행합니다.
+- `dlq-replay-api`는 preview에서 선택한 안전한 record만 `transactions.replay`로 발행합니다.
 
 자세한 설명은 [DLQ Summary/Replay API 실습](dlq-replay-api-guide.md)을 참고합니다.
 
@@ -143,7 +151,7 @@ make down
 ## 2. Docker Compose 실행 순서 요약
 
 ```bash
-cd flink-kafka-realtime-lab
+cd flink-kraft-realtime-lab
 make build
 make up
 make produce
@@ -199,7 +207,9 @@ make produce
 curl http://localhost:8000/metrics
 ```
 
-Grafana는 http://localhost:3000 에서 `admin/admin`으로 접속합니다. 자세한 설명은 [관측성 가이드](observability-guide.md)를 참고합니다.
+Grafana 로컬 기본 계정은 `admin/admin`입니다. 공유 환경에서는
+`GRAFANA_ADMIN_PASSWORD`를 바꾸십시오. 자세한 설명은
+[관측성 가이드](observability-guide.md)를 참고합니다.
 
 ### PostgreSQL CDC
 
@@ -229,7 +239,8 @@ make savepoint
 
 ## 4. Kubernetes로 실행하기
 
-Kubernetes manifests는 Strimzi Kafka Operator와 Flink Kubernetes Operator를 사용하는 실무형 참고 구성입니다.
+Kubernetes manifests는 Strimzi Kafka Operator와 Flink Kubernetes Operator를 사용하는
+학습·비교용 구성입니다.
 
 ### 사전 조건
 
@@ -247,7 +258,7 @@ Kubernetes manifests는 Strimzi Kafka Operator와 Flink Kubernetes Operator를 �
 
 ```bash
 docker build -t realtime-lab-flink-job:2.1.2 ./flink-job
-docker build -t realtime-lab-api:1.0.0 ./api
+docker build -t realtime-lab-api:1.0.0 -f api/Dockerfile .
 docker build -t realtime-lab-generator:1.0.0 ./generator
 ```
 
@@ -276,7 +287,8 @@ kubectl kustomize k8s/overlays/exactly-once > /tmp/realtime-lab-exactly-once.yam
 | Overlay | 사용 목적 | 특징 |
 | --- | --- | --- |
 | `k8s/overlays/dev` | 개발/학습 cluster | Kafka node 1개, ephemeral storage, stateless Flink upgrade |
-| `k8s/overlays/prod-like` | 운영 유사 참고 | Kafka node 3개, replicated topic, persistent Kafka storage, savepoint upgrade |
+| `k8s/overlays/exactly-once` | 전달 보장 비교 | Kafka transactional sink와 `read_committed` 설정 |
+| `k8s/overlays/prod-like` | 렌더링 검토 | Kafka node 3개, replicated topic, persistent Kafka storage, savepoint upgrade |
 
 처음에는 `dev` overlay를 권장합니다.
 
@@ -312,6 +324,7 @@ kubectl apply -k k8s/overlays/dev
 ```bash
 kubectl -n realtime-lab port-forward svc/realtime-lab-api 8000:8000
 curl http://localhost:8000/health
+curl http://localhost:8000/ready
 curl "http://localhost:8000/topics/alerts.fraud/messages?limit=5"
 ```
 
@@ -331,8 +344,10 @@ kubectl delete -k k8s/overlays/prod-like
 
 - Strimzi와 Flink Operator CRD가 없으면 `Kafka`, `KafkaTopic`, `KafkaNodePool`, `FlinkDeployment` 리소스가 생성되지 않습니다.
 - base image 이름은 예시입니다. 실제 cluster에서는 registry 경로를 붙여야 합니다.
-- prod-like overlay도 실제 production 완성본은 아닙니다. TLS, auth, network policy, durable checkpoint storage, metrics, alerting을 추가해야 합니다.
-- Flink checkpoint path는 production storage로 바꾸어야 합니다.
+- `prod-like`의 image와 `s3://replace-me-...` 경로는 placeholder입니다. Flink object
+  storage plugin과 인증을 넣기 전에는 적용하지 말고 렌더링 결과만 검토합니다.
+- 실제 배포에는 TLS/auth, NetworkPolicy, secret manager, metric reporter와 alert
+  routing을 추가해야 합니다.
 
 ## 6. 문제 해결
 

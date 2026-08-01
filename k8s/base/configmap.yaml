@@ -12,4 +12,7 @@ data:
   DLQ_TOPIC: transactions.dlq
   KAFKA_ISOLATION_LEVEL: read_uncommitted
   METRIC_TOPICS: transactions.raw,transactions.replay,transactions.aggregates,alerts.fraud,transactions.dlq,merchant_risk_profiles
+  READABLE_TOPICS: transactions.raw,transactions.replay,transactions.aggregates,alerts.fraud,transactions.dlq,merchant_risk_profiles
   FLINK_CONSUMER_GROUP: flink-realtime-lab
+  METRICS_CACHE_SECONDS: "10"
+  MAX_FUTURE_SKEW_SECONDS: "300"

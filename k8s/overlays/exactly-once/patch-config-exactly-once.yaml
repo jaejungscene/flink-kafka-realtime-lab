@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: realtime-lab-config
+  namespace: realtime-lab
+data:
+  KAFKA_ISOLATION_LEVEL: read_committed

@@ -1,12 +1,16 @@
 {
   "type": "record",
   "name": "DlqEvent",
-  "namespace": "com.example.realtimelab.schema",
+  "namespace": "io.github.jaejungscene.realtimelab.schema",
   "doc": "파싱/검증/late event 격리용 DLQ 스키마.",
   "fields": [
     { "name": "errorType", "type": "string" },
     { "name": "reason", "type": "string" },
     { "name": "sourceTopic", "type": [ "null", "string" ], "default": null },
+    { "name": "sourcePartition", "type": [ "null", "int" ], "default": null },
+    { "name": "sourceOffset", "type": [ "null", "long" ], "default": null },
+    { "name": "sourceTimestamp", "type": [ "null", "long" ], "default": null },
+    { "name": "sourceKey", "type": [ "null", "string" ], "default": null },
     { "name": "replayTopic", "type": [ "null", "string" ], "default": null },
     { "name": "rawValue", "type": "string" },
     { "name": "observedAt", "type": "long" },

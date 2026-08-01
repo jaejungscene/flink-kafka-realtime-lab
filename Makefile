@@ -1,17 +1,27 @@
 PROJECT_NAME := flink-kraft-realtime-lab
 COMPOSE := docker compose
-KAFKA := docker compose exec kafka /opt/kafka/bin
+KAFKA := $(COMPOSE) exec kafka /opt/kafka/bin
+API_CURL := curl -fsS $(if $(API_TOKEN),-H "X-API-Token: $(API_TOKEN)")
 
-.PHONY: build up up-exactly-once down restart logs topics lag produce produce-high-load load-snapshot load-experiment load-experiment-small replay-dlq dlq-summary dlq-replay-preview dlq-replay-api consume-alerts consume-aggregates consume-dlq consume-replay consume-merchant-profiles schema-up schema-register cdc-up cdc-register cdc-update-merchant observe-up chaos-kill-taskmanager chaos-restart-kafka savepoint smoke ci-smoke ci-smoke-exactly-once test test-python k8s-render-dev k8s-render-prod-like k8s-render-exactly-once clean
+.PHONY: build up up-exactly-once down restart logs topics lag
+.PHONY: produce produce-high-load load-snapshot load-experiment load-experiment-small
+.PHONY: replay-dlq dlq-summary dlq-replay-preview dlq-replay-api
+.PHONY: consume-alerts consume-aggregates consume-dlq consume-replay consume-merchant-profiles
+.PHONY: schema-up schema-register cdc-up cdc-register cdc-update-merchant observe-up
+.PHONY: chaos-kill-taskmanager chaos-restart-kafka savepoint smoke ci-smoke ci-smoke-exactly-once
+.PHONY: test test-flink test-api test-python
+.PHONY: k8s-render-dev k8s-render-prod-like k8s-render-exactly-once clean
 
 build:
-	$(COMPOSE) build
+	$(COMPOSE) --profile tools --profile schema --profile cdc --profile observability build
 
 up:
 	$(COMPOSE) up -d kafka topic-init flink-jobmanager flink-taskmanager flink-submit kafka-ui api
 
 up-exactly-once:
-	FLINK_CHECKPOINTING_MODE=EXACTLY_ONCE SINK_DELIVERY_GUARANTEE=EXACTLY_ONCE KAFKA_ISOLATION_LEVEL=read_committed $(COMPOSE) up -d kafka topic-init flink-jobmanager flink-taskmanager flink-submit kafka-ui api
+	SINK_DELIVERY_GUARANTEE=EXACTLY_ONCE \
+	KAFKA_ISOLATION_LEVEL=read_committed \
+	$(COMPOSE) up -d kafka topic-init flink-jobmanager flink-taskmanager flink-submit kafka-ui api
 
 down:
 	$(COMPOSE) down -v
@@ -46,13 +56,13 @@ replay-dlq:
 	$(COMPOSE) run --rm replayer
 
 dlq-summary:
-	curl -fsS "http://localhost:8000/dlq/summary?limit=100&from_beginning=true" | python3 -m json.tool
+	$(API_CURL) "http://localhost:8000/dlq/summary?limit=100&from_beginning=true" | python3 -m json.tool
 
 dlq-replay-preview:
-	curl -fsS -X POST "http://localhost:8000/dlq/replay" -H "content-type: application/json" -d '{"max_messages":5,"scan_limit":100,"dry_run":true}' | python3 -m json.tool
+	$(API_CURL) -X POST "http://localhost:8000/dlq/replay" -H "content-type: application/json" -d '{"max_messages":5,"scan_limit":100,"dry_run":true}' | python3 -m json.tool
 
 dlq-replay-api:
-	curl -fsS -X POST "http://localhost:8000/dlq/replay" -H "content-type: application/json" -d '{"max_messages":5,"scan_limit":100,"dry_run":false}' | python3 -m json.tool
+	python3 scripts/replay-dlq-api.py
 
 consume-alerts:
 	$(KAFKA)/kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic alerts.fraud --from-beginning
@@ -103,13 +113,20 @@ ci-smoke:
 	./scripts/ci-e2e-smoke.sh
 
 ci-smoke-exactly-once:
-	FLINK_CHECKPOINTING_MODE=EXACTLY_ONCE SINK_DELIVERY_GUARANTEE=EXACTLY_ONCE KAFKA_ISOLATION_LEVEL=read_committed ./scripts/ci-e2e-smoke.sh
+	SINK_DELIVERY_GUARANTEE=EXACTLY_ONCE \
+	KAFKA_ISOLATION_LEVEL=read_committed \
+	./scripts/ci-e2e-smoke.sh
 
-test:
+test: test-flink test-api
+
+test-flink:
 	docker build --target test -t $(PROJECT_NAME)-flink-test ./flink-job
 
+test-api:
+	docker build --target test -t $(PROJECT_NAME)-api-test -f api/Dockerfile .
+
 test-python:
-	PYTHONPATH=api:common/python python3 -m unittest discover -s api/tests
+	PYTHONPATH=common/python python3 -m unittest discover -s api/tests -p 'test_dlq_tools.py'
 
 k8s-render-dev:
 	kubectl kustomize k8s/overlays/dev
@@ -123,3 +140,4 @@ k8s-render-exactly-once:
 clean:
 	$(COMPOSE) down -v --remove-orphans
 	docker image rm $(PROJECT_NAME)-flink-test 2>/dev/null || true
+	docker image rm $(PROJECT_NAME)-api-test 2>/dev/null || true

@@ -46,14 +46,17 @@ Rule은 `RiskRules`에 분리되어 있습니다. 그래서 전체 Flink topolog
 
 ## 5. DLQ와 Replay
 
-이 job은 Kafka value를 먼저 string으로 읽고, Flink 내부에서 JSON parse를 수행합니다. 이렇게 하면 bad event 처리가 명시적으로 드러납니다.
+이 job은 Kafka 좌표와 key/value를 envelope로 보존한 뒤 Flink 내부에서 JSON parse를
+수행합니다. 따라서 bad event의 원문과 source offset을 함께 DLQ에 남길 수 있습니다.
 
 - malformed JSON
 - required field 누락
 - negative amount
 - too-late event
 
-복구 가능한 DLQ record는 replayer가 보정한 뒤 `transactions.replay`로 다시 발행할 수 있습니다.
+자동 replay는 유효한 원본 JSON과 필수 의미 값이 남아 있는
+`PARSE_OR_VALIDATION_ERROR`에만 허용합니다. `LATE_EVENT`, reference data 오류, 음수
+금액처럼 정책 판단이 필요한 데이터는 별도 remediation 대상입니다.
 
 ## 6. 추천 실습
 

@@ -3,7 +3,7 @@ services:
     image: apache/kafka:4.1.2
     hostname: kafka
     ports:
-      - "29092:29092"
+      - "127.0.0.1:29092:29092"
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
@@ -20,6 +20,9 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_NUM_PARTITIONS: 3
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes:
+      - kafka-data:/var/lib/kafka/data
     healthcheck:
       test: [ "CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list >/dev/null 2>&1" ]
       interval: 5s
@@ -43,17 +46,28 @@ services:
       topic-init:
         condition: service_completed_successfully
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     command: jobmanager
+    healthcheck:
+      test: [ "CMD-SHELL", "flink list -m localhost:8081 >/dev/null 2>&1" ]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 10s
     environment:
       FLINK_PROPERTIES: |
         jobmanager.rpc.address: flink-jobmanager
         state.backend.type: hashmap
+        execution.checkpointing.dir: file:///opt/flink/state/checkpoints
+        execution.checkpointing.savepoint-dir: file:///opt/flink/state/savepoints
         execution.checkpointing.interval: 10000
-        execution.checkpointing.mode: ${FLINK_CHECKPOINTING_MODE:-AT_LEAST_ONCE}
+        execution.checkpointing.mode: ${SINK_DELIVERY_GUARANTEE:-AT_LEAST_ONCE}
+        execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
         restart-strategy.type: fixed-delay
         restart-strategy.fixed-delay.attempts: 3
         restart-strategy.fixed-delay.delay: 10 s
+    volumes:
+      - flink-state:/opt/flink/state
 
   flink-taskmanager:
     build:
@@ -61,7 +75,7 @@ services:
       target: runtime
     depends_on:
       flink-jobmanager:
-        condition: service_started
+        condition: service_healthy
     command: taskmanager
     scale: 1
     environment:
@@ -69,11 +83,16 @@ services:
         jobmanager.rpc.address: flink-jobmanager
         taskmanager.numberOfTaskSlots: 4
         state.backend.type: hashmap
+        execution.checkpointing.dir: file:///opt/flink/state/checkpoints
+        execution.checkpointing.savepoint-dir: file:///opt/flink/state/savepoints
         execution.checkpointing.interval: 10000
-        execution.checkpointing.mode: ${FLINK_CHECKPOINTING_MODE:-AT_LEAST_ONCE}
+        execution.checkpointing.mode: ${SINK_DELIVERY_GUARANTEE:-AT_LEAST_ONCE}
+        execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
         restart-strategy.type: fixed-delay
         restart-strategy.fixed-delay.attempts: 3
         restart-strategy.fixed-delay.delay: 10 s
+    volumes:
+      - flink-state:/opt/flink/state
 
   flink-submit:
     build:
@@ -81,31 +100,63 @@ services:
       target: runtime
     depends_on:
       flink-jobmanager:
-        condition: service_started
+        condition: service_healthy
       flink-taskmanager:
         condition: service_started
       topic-init:
         condition: service_completed_successfully
     command:
-      - /bin/bash
-      - -lc
-      - |
-        sleep 8
-        flink run -d \
-          -m flink-jobmanager:8081 \
-          /opt/flink/usrlib/realtime-lab-flink-job.jar \
-          --bootstrapServers kafka:9092 \
-          --rawTopic transactions.raw \
-          --replayTopic transactions.replay \
-          --merchantRiskProfileTopic merchant_risk_profiles \
-          --alertTopic alerts.fraud \
-          --aggregateTopic transactions.aggregates \
-          --dlqTopic transactions.dlq \
-          --consumerGroup flink-realtime-lab \
-          --sinkDeliveryGuarantee ${SINK_DELIVERY_GUARANTEE:-AT_LEAST_ONCE} \
-          --checkpointIntervalMillis 10000 \
-          --watermarkDelaySeconds 10 \
-          --allowedLatenessSeconds 30
+      - /opt/flink/bin/submit-job.sh
+      - --bootstrapServers
+      - kafka:9092
+      - --rawTopic
+      - transactions.raw
+      - --replayTopic
+      - transactions.replay
+      - --merchantRiskProfileTopic
+      - merchant_risk_profiles
+      - --alertTopic
+      - alerts.fraud
+      - --aggregateTopic
+      - transactions.aggregates
+      - --dlqTopic
+      - transactions.dlq
+      - --consumerGroup
+      - flink-realtime-lab
+      - --sourceIsolationLevel
+      - ${KAFKA_ISOLATION_LEVEL:-read_uncommitted}
+      - --sinkDeliveryGuarantee
+      - ${SINK_DELIVERY_GUARANTEE:-AT_LEAST_ONCE}
+      - --checkpointIntervalMillis
+      - "10000"
+      - --watermarkDelaySeconds
+      - "10"
+      - --allowedLatenessSeconds
+      - "30"
+      - --sourceIdleTimeoutSeconds
+      - "30"
+      - --maxFutureSkewSeconds
+      - "300"
+      - --sourceStartupMode
+      - LATEST
+      - --transactionalIdPrefix
+      - realtime-lab-compose
+      - --riskHighFraudScore
+      - ${RISK_HIGH_FRAUD_SCORE:-0.92}
+      - --riskHighAmount
+      - ${RISK_HIGH_AMOUNT:-1000.0}
+      - --riskHighIpRisk
+      - ${RISK_HIGH_IP_RISK:-80}
+      - --riskBurstCountThreshold
+      - ${RISK_BURST_COUNT_THRESHOLD:-5}
+      - --riskBurstAmountThreshold
+      - ${RISK_BURST_AMOUNT_THRESHOLD:-3000.0}
+      - --riskMerchantCountThreshold
+      - ${RISK_MERCHANT_COUNT_THRESHOLD:-25}
+      - --riskMerchantAmountThreshold
+      - ${RISK_MERCHANT_AMOUNT_THRESHOLD:-15000.0}
+      - --riskMerchantAvgFraudScoreThreshold
+      - ${RISK_MERCHANT_AVG_FRAUD_SCORE_THRESHOLD:-0.72}
     restart: "no"
 
   generator:
@@ -117,7 +168,6 @@ services:
         condition: service_healthy
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      KAFKA_ISOLATION_LEVEL: ${KAFKA_ISOLATION_LEVEL:-read_uncommitted}
       RAW_TOPIC: transactions.raw
       EVENTS_PER_SECOND: 25
       RUN_SECONDS: 120
@@ -135,6 +185,10 @@ services:
       DLQ_TOPIC: transactions.dlq
       REPLAY_TOPIC: transactions.replay
       MAX_MESSAGES: 50
+      KAFKA_ISOLATION_LEVEL: ${KAFKA_ISOLATION_LEVEL:-read_uncommitted}
+      REPLAYER_GROUP_ID: ${REPLAYER_GROUP_ID:-realtime-lab-replayer}
+      REPLAY_RUN_ID: ${REPLAY_RUN_ID:-replay-run-local}
+      MAX_FUTURE_SKEW_SECONDS: ${MAX_FUTURE_SKEW_SECONDS:-300}
 
   api:
     build:
@@ -144,12 +198,21 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_ISOLATION_LEVEL: ${KAFKA_ISOLATION_LEVEL:-read_uncommitted}
       DLQ_TOPIC: transactions.dlq
       REPLAY_TOPIC: transactions.replay
+      METRICS_CACHE_SECONDS: 10
+      MAX_FUTURE_SKEW_SECONDS: ${MAX_FUTURE_SKEW_SECONDS:-300}
+      API_TOKEN: ${API_TOKEN:-}
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready', timeout=3)" ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
 
   kafka-ui:
     image: provectuslabs/kafka-ui:v0.7.2
@@ -157,7 +220,7 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: local-kraft
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
@@ -169,7 +232,7 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8085:8081"
+      - "127.0.0.1:8085:8081"
     environment:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
       SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
@@ -192,14 +255,20 @@ services:
     image: postgres:17-alpine
     profiles: [ "cdc" ]
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     command: [ "postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=8", "-c", "max_wal_senders=8" ]
     environment:
       POSTGRES_DB: realtime_lab
       POSTGRES_USER: lab
-      POSTGRES_PASSWORD: lab
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lab}
     volumes:
       - ./cdc/postgres-init:/docker-entrypoint-initdb.d:ro
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U lab -d realtime_lab" ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   kafka-connect:
     image: debezium/connect:3.0.0.Final
@@ -207,10 +276,12 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+      topic-init:
+        condition: service_completed_successfully
       postgres:
-        condition: service_started
+        condition: service_healthy
     ports:
-      - "8083:8083"
+      - "127.0.0.1:8083:8083"
     environment:
       BOOTSTRAP_SERVERS: kafka:9092
       GROUP_ID: realtime-lab-connect
@@ -225,14 +296,18 @@ services:
       KEY_CONVERTER_SCHEMAS_ENABLE: "false"
       VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
       CONNECT_REST_ADVERTISED_HOST_NAME: kafka-connect
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lab}
+      CONNECT_CONFIG_PROVIDERS: env
+      CONNECT_CONFIG_PROVIDERS_ENV_CLASS: org.apache.kafka.common.config.provider.EnvVarConfigProvider
+      CONNECT_CONFIG_PROVIDERS_ENV_PARAM_ALLOWLIST_PATTERN: ^POSTGRES_PASSWORD$
 
   cdc-init:
-    image: curlimages/curl:8.11.1
+    image: python:3.12-slim
     profiles: [ "cdc" ]
     depends_on:
       kafka-connect:
         condition: service_started
-    entrypoint: [ "/bin/sh", "/cdc/register-postgres-connector.sh" ]
+    entrypoint: [ "python", "/cdc/register_postgres_connector.py" ]
     volumes:
       - ./cdc:/cdc:ro
     environment:
@@ -242,9 +317,10 @@ services:
     image: prom/prometheus:v3.5.0
     profiles: [ "observability" ]
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     volumes:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
 
   grafana:
     image: grafana/grafana:12.1.1
@@ -252,10 +328,15 @@ services:
     depends_on:
       - prometheus
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
     volumes:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+
+volumes:
+  kafka-data:
+  postgres-data:
+  flink-state:

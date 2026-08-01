@@ -24,6 +24,8 @@ spec:
       - transactions.dlq
       - --consumerGroup
       - flink-realtime-lab
+      - --sourceIsolationLevel
+      - read_committed
       - --sinkDeliveryGuarantee
       - EXACTLY_ONCE
       - --checkpointIntervalMillis
@@ -32,3 +34,27 @@ spec:
       - "10"
       - --allowedLatenessSeconds
       - "30"
+      - --sourceIdleTimeoutSeconds
+      - "30"
+      - --maxFutureSkewSeconds
+      - "300"
+      - --sourceStartupMode
+      - LATEST
+      - --transactionalIdPrefix
+      - realtime-lab-k8s-exactly-once
+      - --riskHighFraudScore
+      - "0.92"
+      - --riskHighAmount
+      - "1000.0"
+      - --riskHighIpRisk
+      - "80"
+      - --riskBurstCountThreshold
+      - "5"
+      - --riskBurstAmountThreshold
+      - "3000.0"
+      - --riskMerchantCountThreshold
+      - "25"
+      - --riskMerchantAmountThreshold
+      - "15000.0"
+      - --riskMerchantAvgFraudScoreThreshold
+      - "0.72"

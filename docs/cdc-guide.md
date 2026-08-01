@@ -15,6 +15,11 @@ make cdc-register
 make consume-merchant-profiles
 ```
 
+`make cdc-up`은 PostgreSQL과 Kafka Connect를 시작하고, `make cdc-register`가 connector를
+생성하거나 같은 이름의 기존 connector 설정을 갱신합니다. 등록기는
+`PUT /connectors/{name}/config`에 평면 config를 보내고 connector와 모든 task가
+`RUNNING`인지 확인한 뒤 성공합니다.
+
 DB 값을 바꿔 CDC event를 발생시킵니다.
 
 ```bash
@@ -46,6 +51,14 @@ Flink job은 `merchant_risk_profiles` topic을 earliest부터 읽습니다. 이 
 - profile이 없으면 multiplier `1.0`으로 처리합니다.
 - profile이 있으면 `risk_multiplier`를 fraud score에 곱해 effective fraud score를 만듭니다.
 - `manual_review_required=true`인 가맹점은 경계선 이벤트도 알람으로 승격될 수 있습니다.
+- Debezium `__deleted=true` event는 해당 profile을 Broadcast State에서 제거합니다.
 - 깨진 profile event는 `REFERENCE_DATA_PARSE_ERROR`로 DLQ에 보냅니다.
 
 실무에서는 profile 변경 시점과 이미 처리된 window를 다시 계산할지 여부를 별도 정책으로 정해야 합니다. 이 랩은 “변경 이후 들어오는 이벤트부터 새 profile을 적용”하는 단순하고 흔한 운영 모델을 사용합니다.
+두 입력 스트림의 도착 순서는 보장되지 않으므로 job 시작 직후 profile snapshot이 아직
+도착하지 않은 transaction은 기본 multiplier로 처리될 수 있습니다.
+
+Connector JSON에는 DB 비밀번호를 저장하지 않습니다. Compose가
+`POSTGRES_PASSWORD`를 Kafka Connect 환경변수로 전달하고, connector는
+`EnvVarConfigProvider`로 값을 읽습니다. 공유 환경에서는 `.env` 기본값을 교체하고
+secret manager 또는 file-mounted secret으로 확장해야 합니다.

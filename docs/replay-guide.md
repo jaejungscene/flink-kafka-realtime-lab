@@ -1,6 +1,8 @@
 # DLQ Replay 가이드
 
-이 프로젝트는 bad event와 late event를 `transactions.dlq`로 분리하고, 보정 가능한 record를 `transactions.replay`로 다시 발행하는 replayer를 제공합니다.
+이 프로젝트는 파싱/검증 실패와 late event를 `transactions.dlq`로 분리합니다. 자동
+replay는 원본 의미를 추론하지 않아도 되는 일부 `PARSE_OR_VALIDATION_ERROR`에만
+허용합니다.
 
 ## 재처리 토픽을 분리한 이유
 
@@ -30,18 +32,24 @@ Flink job은 `transactions.raw`와 `transactions.replay`를 모두 소비합니�
 
 API endpoint 상세는 [DLQ Summary/Replay API 실습](dlq-replay-api-guide.md)을 참고합니다.
 
-## 재처리 도구가 보정하는 값
+## 자동 replay 허용 범위
 
-- 누락된 `eventId`
-- 누락된 user, merchant, category, country, channel, device field
-- 음수 amount
-- 너무 오래된 event time
+- `rawValue`가 유효한 JSON object입니다.
+- `userId`, 양수 epoch millis `eventTime`, 유한한 음수 아닌 `amount`가 보존되어 있습니다.
+- `eventTime`은 현재 시각보다 설정된 미래 허용 범위를 넘지 않습니다.
+- `mlFraudScore`와 `ipRisk`가 있으면 각각 `0..1`, `0..100` 범위입니다.
+- 식별자는 문자열이고 `schemaVersion`은 양의 정수입니다.
+- 비어 있는 `eventId`는 source DLQ topic/partition/offset으로 결정적으로 생성합니다.
+- replay run과 source offset metadata를 추가합니다.
 
-Replayer는 parse 자체가 불가능한 JSON까지 억지로 고치지는 않습니다. 실제 production에서도 일부 DLQ record는 사람의 판단이나 batch remediation이 필요합니다.
+음수 금액, 누락된 사용자, 잘못된 event time은 자동으로 고치지 않습니다. `LATE_EVENT`와
+`REFERENCE_DATA_PARSE_ERROR`도 별도 backfill/remediation 경로가 필요합니다.
 
 ## 운영 패턴
 
 - DLQ는 immutable하게 보존합니다.
-- 보정된 record는 replay topic에 씁니다.
+- 허용 정책을 통과하고 replay metadata가 붙은 record는 replay topic에 씁니다.
 - operator, ticket id, source DLQ offset, replay timestamp 같은 metadata를 추가합니다.
 - Replay 도구에는 access control과 audit log를 둡니다.
+- 같은 source offset을 다시 발행할 수 있으므로 downstream은 `eventId`/`replayId` 기반
+  dedup 또는 처리 이력 저장소를 별도로 설계합니다.

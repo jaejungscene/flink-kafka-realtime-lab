@@ -69,12 +69,16 @@ LOAD_RUN_SECONDS=300 LOAD_EVENTS_PER_SECOND=250 make load-experiment
 make savepoint
 ```
 
-Savepoint는 job upgrade, rule 변경, 버전 배포 전에 상태를 안전하게 넘기기 위한 운영 절차입니다. 이 lab에서는 기본값으로 로컬 `/tmp/flink-savepoints`를 사용하지만, 운영에서는 S3, GCS, HDFS 같은 durable storage를 사용해야 합니다.
+Savepoint는 job upgrade, rule 변경, 버전 배포 전에 상태를 넘기기 위한 운영 절차입니다.
+이 lab의 기본 경로는 Compose named volume 안의
+`file:///opt/flink/state/savepoints`입니다. 컨테이너 재생성에는 남지만 Docker host 장애나
+`make down`의 volume 삭제는 견디지 못합니다. 운영에서는 Flink filesystem plugin과
+인증을 갖춘 object storage 또는 HDFS를 사용해야 합니다.
 
 로컬 savepoint 경로를 바꾸려면:
 
 ```bash
-SAVEPOINT_DIR=/tmp/my-savepoints make savepoint
+SAVEPOINT_DIR=file:///opt/flink/state/savepoints/manual make savepoint
 ```
 
 ## Delivery guarantee 비교

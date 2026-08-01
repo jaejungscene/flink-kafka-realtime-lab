@@ -7,8 +7,8 @@ spec:
   flinkConfiguration:
     taskmanager.numberOfTaskSlots: "4"
     execution.checkpointing.interval: "10000"
-    state.checkpoints.dir: s3://replace-me-realtime-lab/flink/checkpoints
-    state.savepoints.dir: s3://replace-me-realtime-lab/flink/savepoints
+    execution.checkpointing.dir: s3://replace-me-realtime-lab/flink/checkpoints
+    execution.checkpointing.savepoint-dir: s3://replace-me-realtime-lab/flink/savepoints
   jobManager:
     resource:
       memory: "2048m"

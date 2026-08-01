@@ -7,7 +7,7 @@
 | Topic | 목적 |
 | --- | --- |
 | `transactions.raw` | 원천 결제/ML 이벤트 |
-| `transactions.replay` | DLQ 보정 후 재처리 이벤트 |
+| `transactions.replay` | 안전성 검사를 통과한 DLQ 재처리 이벤트 |
 | `transactions.aggregates` | Flink 실시간 집계 결과 |
 | `transactions.aggregates.sql` | Flink SQL 집계 예제 결과 |
 | `alerts.fraud` | Flink 알람 판단 결과 |
@@ -18,6 +18,7 @@
 
 ```json
 {
+  "schemaVersion": 1,
   "eventId": "8d6296df-8fdf-49fe-87a2-cf9476f54f3d",
   "userId": "user-001",
   "merchantId": "merchant-07",
@@ -46,8 +47,11 @@
 - `userId`
 - `eventTime`
 - `amount >= 0`
+- `schemaVersion >= 1`
 
 `replay*` field는 `transactions.replay`에서만 붙을 수 있는 audit metadata입니다.
+자동 replay는 기존 `userId`, `eventTime`, 유효한 숫자 값을 보존하며, 비어 있는
+`eventId`만 DLQ source 좌표로 결정적으로 생성할 수 있습니다.
 
 ## `alerts.fraud`
 
@@ -59,6 +63,7 @@
 
 ```json
 {
+  "schemaVersion": 1,
   "alertId": "26a0b4c6-4f02-44e8-88c1-271a203d2a65",
   "alertType": "HIGH_RISK_TRANSACTION",
   "severity": "CRITICAL",
@@ -67,6 +72,7 @@
   "windowStart": 1760000000000,
   "windowEnd": 1760000000000,
   "eventTime": 1760000000000,
+  "metricName": "effectiveFraudScore",
   "metricValue": 0.98,
   "sampleEventId": "8d6296df-8fdf-49fe-87a2-cf9476f54f3d"
 }
@@ -76,7 +82,8 @@
 
 ```json
 {
-  "aggregateType": "COUNTRY_CATEGORY_1M",
+  "schemaVersion": 1,
+  "aggregateType": "COUNTRY_CATEGORY_MERCHANT_1M",
   "key": "KR|electronics|merchant-07",
   "windowStart": 1760000000000,
   "windowEnd": 1760000060000,
@@ -91,9 +98,14 @@
 
 ```json
 {
+  "schemaVersion": 1,
   "errorType": "PARSE_OR_VALIDATION_ERROR",
   "reason": "eventId is required",
-  "sourceTopic": "transactions.raw,transactions.replay",
+  "sourceTopic": "transactions.raw",
+  "sourcePartition": 2,
+  "sourceOffset": 42,
+  "sourceTimestamp": 1760000000100,
+  "sourceKey": "user-001",
   "replayTopic": "transactions.replay",
   "rawValue": "{\"eventId\":\"\"}",
   "observedAt": 1760000000000
@@ -105,6 +117,9 @@
 - `PARSE_OR_VALIDATION_ERROR`
 - `LATE_EVENT`
 - `REFERENCE_DATA_PARSE_ERROR`
+
+`LATE_EVENT`와 `REFERENCE_DATA_PARSE_ERROR`는 자동 replay 대상이 아닙니다. DLQ source
+좌표는 원본 Kafka record를 추적하고 별도 remediation 결과를 감사하는 데 사용합니다.
 
 ## `merchant_risk_profiles`
 
@@ -119,6 +134,9 @@ CDC 선택 profile을 실행하면 PostgreSQL의 `merchant_risk_profiles` table 
   "updated_at": "2026-06-22T10:00:00Z"
 }
 ```
+
+삭제 event는 Debezium rewrite 형식으로 같은 key와 `"__deleted": "true"`를 포함하며,
+Flink는 해당 profile을 Broadcast State에서 제거합니다.
 
 이 topic은 compacted topic입니다. Flink job은 earliest부터 읽어 Broadcast State를 구성하고, transaction의 `merchantId`와 join해 effective fraud score 계산에 사용합니다.
 

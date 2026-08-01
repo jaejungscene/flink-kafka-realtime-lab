@@ -7,18 +7,26 @@
 - Flink Kafka connector: `4.0.1-2.0`
 - Java: `17`
 
-## Kafka 4.1.2를 선택한 이유
+## 선택 원칙
 
-Kafka 4.x는 KRaft-only 방향을 대표합니다. `4.1.2`는 무조건 최신 line을 따라가기보다는 Kafka 4.0의 KRaft-only 전환 이후 한 단계 안정화된 버전이라는 점에서, "현대적이지만 지나치게 공격적이지 않은" 실무형 baseline으로 적합합니다.
+이 저장소는 “현재 최신”을 문서에 주장하지 않고, 함께 검증한 image와 dependency를
+고정합니다. 버전을 바꿀 때는 Java test, shaded JAR build, Compose E2E, connector와
+operator 호환성을 다시 확인해야 합니다.
 
-## Flink 2.1.2를 선택한 이유
+## Kafka 4.1.2
 
-Flink 2.x는 신규 학습과 신규 프로젝트 설계에 더 투자 가치가 높은 line입니다. `2.1.2`는 최신 2.2 line보다 조금 덜 공격적이면서도 Flink 2.x ecosystem과 migration mindset을 학습하기에 적합합니다.
+ZooKeeper 없이 KRaft controller/broker 구성을 실험하기 위해 Kafka 4.x image를
+사용합니다. Compose는 단일 dual-role node이고 `prod-like` overlay는 3개 dual-role
+node를 보여 주지만, 이것만으로 운영 고가용성이 검증되는 것은 아닙니다.
 
-## Flink 1.20 LTS를 쓰지 않은 이유
+## Flink 2.1.2와 Java 17
 
-Flink 1.20은 이미 1.x job을 운영 중인 팀에는 여전히 의미가 있습니다. 하지만 이 lab은 신규 학습과 신규 구축을 목표로 하므로 Flink 2.1.2를 기준으로 삼았습니다. 동시에 많은 기업 운영계가 아직 1.x workload를 보유하고 있다는 점은 문서에서 명시합니다.
+DataStream API를 Flink 2.x runtime에서 검증하기 위해 runtime과 provided dependency를
+`2.1.2`로 맞췄습니다. Maven enforcer는 build JDK를 Java 17로 제한해 local/CI/runtime
+차이를 줄입니다. 기존 Flink 1.x workload의 migration 가능성을 뜻하지는 않습니다.
 
 ## 커넥터 참고 사항
 
-이 프로젝트를 업데이트한 시점에 공개 Maven repository에서 확인 가능한 Flink 2.x Kafka connector line은 `4.0.1-2.0`입니다. 프로젝트는 해당 connector를 고정하고 Maven test/build 경로로 검증합니다.
+Kafka connector는 `4.0.1-2.0`으로 고정합니다. Connector suffix와 Flink minor가 항상
+동일하다는 가정을 하지 말고, 버전 변경 PR에서 공식 compatibility 정보와 E2E 결과를
+함께 검토합니다.

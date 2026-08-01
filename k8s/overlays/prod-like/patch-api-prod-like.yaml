@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: realtime-lab-api
+  namespace: realtime-lab
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+        - name: api
+          env:
+            - name: API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: realtime-lab-api-secrets
+                  key: api-token
+                  optional: false
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: realtime-lab-api

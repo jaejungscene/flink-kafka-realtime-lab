@@ -1,7 +1,7 @@
 {
   "type": "record",
   "name": "TransactionEvent",
-  "namespace": "com.example.realtimelab.schema",
+  "namespace": "io.github.jaejungscene.realtimelab.schema",
   "doc": "결제 이벤트 원천 스키마. 신규 field는 기본값을 가진 optional field로 추가한다.",
   "fields": [
     { "name": "eventId", "type": "string" },
