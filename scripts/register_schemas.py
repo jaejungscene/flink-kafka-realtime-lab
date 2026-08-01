@@ -6,7 +6,9 @@ import urllib.request
 from pathlib import Path
 
 
-SCHEMA_REGISTRY_URL = os.getenv("SCHEMA_REGISTRY_URL", "http://localhost:8085").rstrip("/")
+SCHEMA_REGISTRY_URL = (
+    os.getenv("SCHEMA_REGISTRY_URL", "http://localhost:8085").strip().rstrip("/")
+)
 SCHEMA_DIR = Path(os.getenv("SCHEMA_DIR", "/schemas"))
 if not SCHEMA_DIR.exists():
     SCHEMA_DIR = Path("schemas")

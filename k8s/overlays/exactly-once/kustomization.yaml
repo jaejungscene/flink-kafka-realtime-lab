@@ -3,6 +3,10 @@ kind: Kustomization
 resources:
   - ../../base
 patches:
+  - path: patch-config-exactly-once.yaml
+    target:
+      kind: ConfigMap
+      name: realtime-lab-config
   - path: patch-flink-exactly-once.yaml
     target:
       kind: FlinkDeployment

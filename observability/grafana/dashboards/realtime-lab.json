@@ -36,7 +36,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (topic) (realtime_lab_kafka_topic_retained_records_total)",
+          "expr": "sum by (topic) (realtime_lab_kafka_topic_retained_records)",
           "legendFormat": "{{topic}}",
           "refId": "A"
         }
@@ -129,12 +129,12 @@
       },
       "targets": [
         {
-          "expr": "sum(realtime_lab_kafka_topic_retained_records_total{topic=\"transactions.dlq\"})",
+          "expr": "sum(realtime_lab_kafka_topic_retained_records{topic=\"transactions.dlq\"})",
           "legendFormat": "DLQ",
           "refId": "A"
         },
         {
-          "expr": "sum(realtime_lab_kafka_topic_retained_records_total{topic=\"alerts.fraud\"})",
+          "expr": "sum(realtime_lab_kafka_topic_retained_records{topic=\"alerts.fraud\"})",
           "legendFormat": "alerts",
           "refId": "B"
         }

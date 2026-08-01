@@ -1,6 +1,14 @@
 groups:
   - name: realtime-lab
     rules:
+      - alert: RealtimeLabApiMetricsDown
+        expr: up{job="realtime-lab-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Realtime Lab API metrics endpoint is unreachable
+
       - alert: RealtimeLabKafkaMetricsUnavailable
         expr: realtime_lab_kafka_up == 0
         for: 1m
@@ -17,6 +25,15 @@ groups:
         annotations:
           summary: Flink consumer lag is above the lab threshold
           description: "{{ $labels.group }} / {{ $labels.topic }} lag is {{ $value }}"
+
+      - alert: RealtimeLabKafkaTopicUnavailable
+        expr: realtime_lab_kafka_topic_available == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: A configured Realtime Lab Kafka topic is unavailable
+          description: "{{ $labels.topic }} is missing or returned a metadata error"
 
       - alert: RealtimeLabMetricPartitionErrors
         expr: realtime_lab_metrics_partition_errors > 0
