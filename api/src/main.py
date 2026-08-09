@@ -3,8 +3,6 @@ from __future__ import annotations
 import base64
 import json
 import logging
-import math
-import os
 import secrets
 import threading
 import time
@@ -15,10 +13,8 @@ from confluent_kafka import Consumer, KafkaException, Producer, TopicPartition
 from confluent_kafka.admin import AdminClient
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
 
 from realtime_lab.dlq_tools import (
-    REPLAY_RUN_ID_PATTERN,
     normalize_for_replay,
     summarize_dlq_records,
     to_dlq_sample,
@@ -28,89 +24,26 @@ from realtime_lab.kafka_delivery import (
     KafkaPublishRecord,
     publish_and_wait,
 )
+from src.config import AppSettings
+from src.models import DlqRecordRef, DlqReplayRequest
 
-
-def _non_negative_float_setting(name: str, fallback: float) -> float:
-    raw_value = os.getenv(name)
-    try:
-        value = fallback if raw_value is None or not raw_value.strip() else float(raw_value)
-    except ValueError as exc:
-        raise RuntimeError(f"{name} must be a number: {raw_value}") from exc
-    if not math.isfinite(value) or value < 0:
-        raise RuntimeError(f"{name} must be a finite non-negative number: {value}")
-    return value
-
-
-def _topic_list_setting(name: str, fallback: str) -> tuple[str, ...]:
-    topics = tuple(topic.strip() for topic in os.getenv(name, fallback).split(",") if topic.strip())
-    if not topics:
-        raise RuntimeError(f"{name} must contain at least one topic")
-    if len(set(topics)) != len(topics):
-        raise RuntimeError(f"{name} must not contain duplicate topics")
-    return topics
-
-
-def _non_blank_setting(name: str, fallback: str) -> str:
-    value = os.getenv(name, fallback).strip()
-    if not value:
-        raise RuntimeError(f"{name} must not be blank")
-    return value
-
-
-BOOTSTRAP_SERVERS = _non_blank_setting("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092")
-KAFKA_ISOLATION_LEVEL = _non_blank_setting(
-    "KAFKA_ISOLATION_LEVEL", "read_uncommitted"
-).lower()
-METRIC_TOPICS = _topic_list_setting(
-    "METRIC_TOPICS",
-    "transactions.raw,transactions.replay,transactions.aggregates,alerts.fraud,"
-    "transactions.dlq,merchant_risk_profiles",
-)
-FLINK_CONSUMER_GROUP = _non_blank_setting("FLINK_CONSUMER_GROUP", "flink-realtime-lab")
-DLQ_TOPIC = _non_blank_setting("DLQ_TOPIC", "transactions.dlq")
-REPLAY_TOPIC = _non_blank_setting("REPLAY_TOPIC", "transactions.replay")
-READABLE_TOPICS = frozenset(_topic_list_setting("READABLE_TOPICS", ",".join(METRIC_TOPICS)))
-METRICS_CACHE_SECONDS = _non_negative_float_setting("METRICS_CACHE_SECONDS", 10.0)
-MAX_FUTURE_SKEW_MILLIS = int(
-    _non_negative_float_setting("MAX_FUTURE_SKEW_SECONDS", 300.0) * 1000
-)
-API_TOKEN = os.getenv("API_TOKEN", "").strip()
-
-if KAFKA_ISOLATION_LEVEL not in {"read_committed", "read_uncommitted"}:
-    raise RuntimeError("KAFKA_ISOLATION_LEVEL must be read_committed or read_uncommitted")
-if DLQ_TOPIC == REPLAY_TOPIC:
-    raise RuntimeError("DLQ_TOPIC and REPLAY_TOPIC must be different")
-if DLQ_TOPIC not in READABLE_TOPICS:
-    raise RuntimeError("DLQ_TOPIC must be included in READABLE_TOPICS")
+SETTINGS = AppSettings.from_environment()
+BOOTSTRAP_SERVERS = SETTINGS.bootstrap_servers
+KAFKA_ISOLATION_LEVEL = SETTINGS.kafka_isolation_level
+METRIC_TOPICS = SETTINGS.metric_topics
+FLINK_CONSUMER_GROUP = SETTINGS.flink_consumer_group
+DLQ_TOPIC = SETTINGS.dlq_topic
+REPLAY_TOPIC = SETTINGS.replay_topic
+READABLE_TOPICS = SETTINGS.readable_topics
+METRICS_CACHE_SECONDS = SETTINGS.metrics_cache_seconds
+MAX_FUTURE_SKEW_MILLIS = SETTINGS.max_future_skew_millis
+API_TOKEN = SETTINGS.api_token
 
 _metrics_lock = threading.Lock()
 _metrics_cache: tuple[float, str] | None = None
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Flink KRaft Realtime Lab API", version="1.0.0")
-
-
-class DlqRecordRef(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    partition: int = Field(ge=0)
-    offset: int = Field(ge=0)
-
-
-class DlqReplayRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    max_messages: int = Field(default=20, ge=1, le=200)
-    scan_limit: int = Field(default=200, ge=1, le=1000)
-    timeout_seconds: float = Field(default=8.0, ge=1.0, le=30.0)
-    from_beginning: bool = True
-    dry_run: bool = True
-    confirm: bool = False
-    replay_run_id: str | None = Field(
-        default=None,
-        pattern=REPLAY_RUN_ID_PATTERN.pattern,
-    )
-    records: list[DlqRecordRef] = Field(default_factory=list, max_length=200)
 
 
 def _require_api_token(

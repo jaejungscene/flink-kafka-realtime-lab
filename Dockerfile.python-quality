@@ -25,7 +25,9 @@ RUN ruff check api cdc common generator replayer scripts/*.py
 FROM lint AS test
 
 RUN python -m py_compile \
+        api/src/config.py \
         api/src/main.py \
+        api/src/models.py \
         cdc/register_postgres_connector.py \
         common/python/realtime_lab/dlq_tools.py \
         common/python/realtime_lab/kafka_delivery.py \
