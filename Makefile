@@ -7,7 +7,7 @@ API_CURL := curl -fsS $(if $(API_TOKEN),-H "X-API-Token: $(API_TOKEN)")
 .PHONY: produce produce-high-load load-snapshot load-experiment load-experiment-small
 .PHONY: replay-dlq dlq-summary dlq-replay-preview dlq-replay-api
 .PHONY: consume-alerts consume-aggregates consume-dlq consume-replay consume-merchant-profiles
-.PHONY: schema-up schema-register cdc-up cdc-register cdc-update-merchant observe-up
+.PHONY: schema-up schema-register cdc-up cdc-register cdc-update-merchant cdc-delete-merchant cdc-smoke observe-up
 .PHONY: chaos-kill-taskmanager chaos-restart-kafka savepoint smoke ci-smoke ci-smoke-exactly-once
 .PHONY: lint lint-python test test-flink test-api test-python
 .PHONY: k8s-render-dev k8s-render-prod-like k8s-render-exactly-once clean
@@ -93,6 +93,12 @@ cdc-register:
 
 cdc-update-merchant:
 	$(COMPOSE) exec postgres psql -U lab -d realtime_lab -c "update merchant_risk_profiles set risk_tier='HIGH', risk_multiplier=1.8, updated_at=now() where merchant_id='merchant-hot';"
+
+cdc-delete-merchant:
+	$(COMPOSE) exec postgres psql -U lab -d realtime_lab -c "delete from merchant_risk_profiles where merchant_id='merchant-hot';"
+
+cdc-smoke: cdc-up cdc-register
+	./scripts/cdc-smoke-test.sh
 
 observe-up:
 	$(COMPOSE) --profile observability up -d prometheus grafana

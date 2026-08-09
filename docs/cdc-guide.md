@@ -26,6 +26,16 @@ DB 값을 바꿔 CDC event를 발생시킵니다.
 make cdc-update-merchant
 ```
 
+삭제 event까지 한 번에 확인하려면 다음 target을 사용합니다. 임시 profile을 insert한 뒤 Kafka에서
+일반 event와 `__deleted=true` event를 각각 확인하므로 connector 설정 회귀 검사에도 사용할 수 있습니다.
+
+```bash
+make cdc-smoke
+```
+
+기존 예제 profile 삭제를 직접 실습할 때는 `make cdc-delete-merchant`를 사용합니다. 이후 실습을
+반복하려면 `make down`으로 volume을 초기화하거나 SQL insert로 profile을 다시 생성합니다.
+
 알람에서 반영 여부를 확인합니다.
 
 ```bash

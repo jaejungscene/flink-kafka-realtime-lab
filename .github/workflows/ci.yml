@@ -86,7 +86,10 @@ jobs:
           PY
       - name: Validate shell scripts
         run: |
-          bash -n flink-job/docker/submit-job.sh scripts/create-topics.sh scripts/chaos-kill-taskmanager.sh scripts/flink-savepoint.sh scripts/smoke-test.sh scripts/ci-e2e-smoke.sh scripts/load-snapshot.sh scripts/run-load-experiment.sh
+          bash -n flink-job/docker/submit-job.sh scripts/create-topics.sh \
+            scripts/chaos-kill-taskmanager.sh scripts/flink-savepoint.sh \
+            scripts/smoke-test.sh scripts/ci-e2e-smoke.sh scripts/cdc-smoke-test.sh \
+            scripts/load-snapshot.sh scripts/run-load-experiment.sh
       - name: Validate Markdown fences
         run: |
           for f in README.md docs/*.md; do
@@ -140,20 +143,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Start CDC services
-        run: docker compose --profile cdc up -d kafka topic-init postgres kafka-connect
-      - name: Register connector and wait for its task
-        run: docker compose --profile cdc run --rm cdc-init
-      - name: Verify initial CDC snapshot record
-        run: |
-          set -o pipefail
-          timeout 90s docker compose exec -T kafka \
-            /opt/kafka/bin/kafka-console-consumer.sh \
-            --bootstrap-server kafka:9092 \
-            --topic merchant_risk_profiles \
-            --from-beginning \
-            --max-messages 1 \
-            | python3 -c 'import json,sys; value=json.loads(sys.stdin.readline()); assert value.get("merchant_id")'
+      - name: Verify CDC insert and delete events
+        env:
+          CDC_SMOKE_ATTEMPTS: "30"
+        run: make cdc-smoke
       - name: Clean up CDC stack
         if: always()
         run: docker compose --profile cdc down -v --remove-orphans
