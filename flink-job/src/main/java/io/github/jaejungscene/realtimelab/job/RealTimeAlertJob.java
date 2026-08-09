@@ -84,13 +84,17 @@ public class RealTimeAlertJob {
 
         SingleOutputStreamOperator<TransactionEvent> parsedEvents = env
                 .fromSource(rawSource, WatermarkStrategy.noWatermarks(), "transactions-source")
+                .uid(OperatorUids.TRANSACTIONS_SOURCE)
                 .process(new TransactionParser(DLQ_TAG, replayTopic, config.maxFutureSkew()))
-                .name("parse-transactions");
+                .name("parse-transactions")
+                .uid(OperatorUids.PARSE_TRANSACTIONS);
 
         SingleOutputStreamOperator<MerchantRiskProfile> merchantProfiles = env
                 .fromSource(merchantProfileSource, WatermarkStrategy.noWatermarks(), "merchant-profile-source")
+                .uid(OperatorUids.MERCHANT_PROFILE_SOURCE)
                 .process(new MerchantRiskProfileParser(DLQ_TAG))
-                .name("parse-merchant-profiles");
+                .name("parse-merchant-profiles")
+                .uid(OperatorUids.PARSE_MERCHANT_PROFILES);
 
         MapStateDescriptor<String, MerchantRiskProfile> merchantProfileState = merchantProfileStateDescriptor();
         BroadcastStream<MerchantRiskProfile> merchantProfileBroadcast =
@@ -99,54 +103,73 @@ public class RealTimeAlertJob {
         SingleOutputStreamOperator<TransactionEvent> enrichedEvents = parsedEvents
                 .connect(merchantProfileBroadcast)
                 .process(new MerchantRiskProfileEnrichmentFunction(merchantProfileState))
-                .name("enrich-with-merchant-risk-profiles");
+                .name("enrich-with-merchant-risk-profiles")
+                .uid(OperatorUids.ENRICH_MERCHANT_RISK);
 
-        SingleOutputStreamOperator<TransactionEvent> events = enrichedEvents
+        SingleOutputStreamOperator<TransactionEvent> eventTimeEvents = enrichedEvents
                 .assignTimestampsAndWatermarks(
                         WatermarkStrategy
                                 .<TransactionEvent>forBoundedOutOfOrderness(config.watermarkDelay())
                                 .withIdleness(config.sourceIdleTimeout())
                                 .withTimestampAssigner((event, timestamp) -> event.getEventTime()))
+                .name("assign-event-time-watermarks")
+                .uid(OperatorUids.ASSIGN_EVENT_TIME);
+
+        SingleOutputStreamOperator<TransactionEvent> events = eventTimeEvents
                 .process(new LateEventRouter(WINDOW_SIZE, allowedLateness, rawTopic, replayTopic))
-                .name("event-time-watermarks");
+                .name("route-late-events")
+                .uid(OperatorUids.ROUTE_LATE_EVENTS);
 
         parsedEvents
                 .getSideOutput(DLQ_TAG)
                 .sinkTo(kafkaSink(config, dlqTopic, dlqKey(), "parse-dlq"))
-                .name("sink-dlq");
+                .name("sink-parse-dlq")
+                .uid(OperatorUids.PARSE_DLQ_SINK);
 
         merchantProfiles
                 .getSideOutput(DLQ_TAG)
                 .sinkTo(kafkaSink(config, dlqTopic, dlqKey(), "reference-data-dlq"))
-                .name("sink-profile-dlq");
+                .name("sink-profile-dlq")
+                .uid(OperatorUids.PROFILE_DLQ_SINK);
 
-        events
+        SingleOutputStreamOperator<AlertEvent> highRiskAlerts = events
                 .filter(new HighRiskFilter(riskRules))
+                .name("filter-high-risk-transactions")
+                .uid(OperatorUids.HIGH_RISK_FILTER)
                 .map(new HighRiskAlertMapper(riskRules))
+                .name("map-high-risk-alerts")
+                .uid(OperatorUids.HIGH_RISK_ALERT_MAPPER);
+
+        highRiskAlerts
                 .sinkTo(kafkaSink(config, alertTopic, AlertEvent::getKey, "high-risk-alerts"))
-                .name("sink-high-risk-alerts");
+                .name("sink-high-risk-alerts")
+                .uid(OperatorUids.HIGH_RISK_ALERT_SINK);
 
         SingleOutputStreamOperator<AlertEvent> userWindowAlerts = events
                 .keyBy(TransactionEvent::getUserId)
                 .window(TumblingEventTimeWindows.of(WINDOW_SIZE))
                 .allowedLateness(allowedLateness)
                 .process(new UserWindowAlertFunction(riskRules))
-                .name("user-window-alerts");
+                .name("user-window-alerts")
+                .uid(OperatorUids.USER_WINDOW_ALERTS);
 
         userWindowAlerts
                 .sinkTo(kafkaSink(config, alertTopic, AlertEvent::getKey, "user-window-alerts"))
-                .name("sink-user-window-alerts");
+                .name("sink-user-window-alerts")
+                .uid(OperatorUids.USER_WINDOW_ALERT_SINK);
 
         SingleOutputStreamOperator<AggregateEvent> aggregates = events
                 .keyBy(RealTimeAlertJob::aggregateKey)
                 .window(TumblingEventTimeWindows.of(WINDOW_SIZE))
                 .allowedLateness(allowedLateness)
                 .aggregate(new TransactionStatsAggregate(riskRules), new TransactionAggregateWindowFunction())
-                .name("country-category-merchant-aggregates");
+                .name("country-category-merchant-aggregates")
+                .uid(OperatorUids.TRANSACTION_AGGREGATES);
 
         aggregates
                 .sinkTo(kafkaSink(config, aggregateTopic, AggregateEvent::getKey, "transaction-aggregates"))
-                .name("sink-transaction-aggregates");
+                .name("sink-transaction-aggregates")
+                .uid(OperatorUids.TRANSACTION_AGGREGATE_SINK);
 
         SingleOutputStreamOperator<AlertEvent> merchantAnomalyAlerts = events
                 .keyBy(event -> normalize(event.getMerchantId(), "merchant-unknown"))
@@ -155,16 +178,19 @@ public class RealTimeAlertJob {
                 .aggregate(
                         new TransactionStatsAggregate(riskRules),
                         new MerchantAnomalyWindowFunction(riskRules))
-                .name("merchant-anomaly-alerts");
+                .name("merchant-anomaly-alerts")
+                .uid(OperatorUids.MERCHANT_ANOMALY_ALERTS);
 
         merchantAnomalyAlerts
                 .sinkTo(kafkaSink(config, alertTopic, AlertEvent::getKey, "merchant-anomaly-alerts"))
-                .name("sink-merchant-anomaly-alerts");
+                .name("sink-merchant-anomaly-alerts")
+                .uid(OperatorUids.MERCHANT_ANOMALY_ALERT_SINK);
 
         events
                 .getSideOutput(DLQ_TAG)
                 .sinkTo(kafkaSink(config, dlqTopic, dlqKey(), "late-events-dlq"))
-                .name("sink-late-events-dlq");
+                .name("sink-late-events-dlq")
+                .uid(OperatorUids.LATE_EVENT_DLQ_SINK);
 
         env.execute("flink-kraft-realtime-lab");
     }

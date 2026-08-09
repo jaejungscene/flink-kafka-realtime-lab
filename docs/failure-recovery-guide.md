@@ -65,6 +65,10 @@ LOAD_RUN_SECONDS=300 LOAD_EVENTS_PER_SECOND=250 make load-experiment
 
 ## Savepoint
 
+이 job은 source, 변환, window, sink에 고정된 operator UID를 사용합니다. 표시 이름이나 코드 순서를
+바꿔도 UID가 유지되면 Flink가 savepoint의 상태를 같은 operator에 연결할 수 있습니다. 상태 구조를
+의도적으로 바꾸는 경우에만 UID의 버전을 올리고, 배포 전에 기존 savepoint 복원 가능성을 검증합니다.
+
 ```bash
 make savepoint
 ```
