@@ -42,9 +42,10 @@ flowchart LR
 - `COUNTRY_CATEGORY_MERCHANT_1M`: 국가/카테고리/가맹점 기준 1분 실시간 집계
 - `transactions.dlq`: 파싱 실패, 검증 실패, late event 격리
 - `transactions.replay`: 안전성 검사를 통과한 DLQ 이벤트의 재처리 topic
+- Event ID deduplication: replay/원천 중복을 TTL managed state로 제거
 - `merchant_risk_profiles`: PostgreSQL CDC 기반 가맹점 risk profile을 Flink Broadcast State로 join
 - Schema Registry: Avro schema contract와 evolution 학습
-- Observability: topic별 보존 레코드 추정치, DLQ, alert, consumer lag 관측
+- Observability: Kafka lag와 Flink checkpoint, 처리량, operator counter 관측
 - Load/backpressure: 부하 증가, lag, Flink backpressure 관측
 - Failure recovery: TaskManager 장애, Kafka 재시작, savepoint 실습
 - Flink SQL: 동일 집계 요구사항을 SQL로 표현한 비교 예제
@@ -59,6 +60,7 @@ flowchart LR
 | CDC reference 변경과 삭제 반영 | compacted topic + Broadcast State + Debezium delete rewrite |
 | 재처리 대상이 실행 시점에 바뀜 | preview에서 선택한 exact offset, 동일 run ID, 명시적 confirm 요구 |
 | 장애 시 sink 중복 가능성 비교 | at-least-once와 Kafka transactional exactly-once 실행 경로 분리 |
+| replay/원천 topic의 업무 중복 | event ID keyed state와 TTL 기반 중복 제거 |
 
 ## 먼저 읽기
 

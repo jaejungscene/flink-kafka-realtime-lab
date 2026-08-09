@@ -344,9 +344,9 @@ kubectl delete -k k8s/overlays/prod-like
 
 - Strimzi와 Flink Operator CRD가 없으면 `Kafka`, `KafkaTopic`, `KafkaNodePool`, `FlinkDeployment` 리소스가 생성되지 않습니다.
 - base image 이름은 예시입니다. 실제 cluster에서는 registry 경로를 붙여야 합니다.
-- `prod-like`의 image와 `s3://replace-me-...` 경로는 placeholder입니다. Flink object
-  storage plugin과 인증을 넣기 전에는 적용하지 말고 렌더링 결과만 검토합니다.
-- 실제 배포에는 TLS/auth, NetworkPolicy, secret manager, metric reporter와 alert
+- `prod-like`의 image와 `s3://replace-me-...` 경로는 placeholder입니다. S3 plugin은 image에
+  포함되어 있지만 object storage 경로와 인증을 연결하기 전에는 렌더링 결과만 검토합니다.
+- 실제 배포에는 TLS/auth, NetworkPolicy, secret manager, Prometheus discovery와 alert
   routing을 추가해야 합니다.
 
 ## 6. 문제 해결

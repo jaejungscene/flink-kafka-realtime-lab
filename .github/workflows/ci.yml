@@ -59,8 +59,10 @@ jobs:
       - name: Install API test dependencies
         run: python -m pip install -r api/requirements-test.txt
       - name: Compile Python tools
-        run: python3 -m py_compile api/src/main.py cdc/register_postgres_connector.py common/python/realtime_lab/dlq_tools.py generator/src/producer.py replayer/src/replay_dlq.py scripts/register_schemas.py scripts/replay-dlq-api.py
-      - name: Test API DLQ helpers
+        run: python3 -m compileall -q api/src cdc common/python generator/src replayer/src scripts
+      - name: Test common Python helpers
+        run: PYTHONPATH=common/python python3 -m unittest discover -s common/python/tests
+      - name: Test API contracts and DLQ helpers
         run: PYTHONPATH=api:common/python python3 -m unittest discover -s api/tests
       - name: Test CDC connector registrar
         run: python3 -m unittest discover -s cdc/tests
@@ -85,15 +87,18 @@ jobs:
                   assert "name" not in value and "config" not in value
           PY
       - name: Validate shell scripts
-        run: |
-          bash -n flink-job/docker/submit-job.sh scripts/create-topics.sh \
-            scripts/chaos-kill-taskmanager.sh scripts/flink-savepoint.sh \
-            scripts/smoke-test.sh scripts/ci-e2e-smoke.sh scripts/cdc-smoke-test.sh \
-            scripts/load-snapshot.sh scripts/run-load-experiment.sh
+        run: >-
+          docker run --rm -v "$PWD:/mnt:ro" koalaman/shellcheck-alpine:v0.10.0
+          sh -c 'find /mnt -type f -name "*.sh" -not -path "/mnt/.git/*" -print0 |
+          xargs -0 shellcheck'
+      - name: Validate GitHub Actions workflow
+        run: docker run --rm -v "$PWD:/repo:ro" -w /repo rhysd/actionlint:1.7.7
+      - name: Validate Markdown links
+        run: python3 scripts/validate_markdown_links.py
       - name: Validate Markdown fences
         run: |
           for f in README.md docs/*.md; do
-            n=$(grep -n '^```' "$f" | wc -l | tr -d ' ')
+            n=$(grep -c '^```' "$f" || true)
             if [ $((n % 2)) -ne 0 ]; then
               echo "unclosed fence: $f ($n)"
               exit 1

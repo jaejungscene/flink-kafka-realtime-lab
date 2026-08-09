@@ -280,6 +280,59 @@ plugin, 인증, TLS, NetworkPolicy가 없으므로 production manifest로 간주
   맞췄습니다.
 - 집계 type, CDC CI 검증 범위, API scrape 경보와 세 번째 검토 결과를 문서화했습니다.
 
+## 4차 세부 검토: 31–40
+
+### 31. 재현 가능한 Python 품질 검사
+
+- 로컬 Python 버전에 좌우되지 않도록 Python 3.12 Docker image에서 Ruff, compile, unit test를
+  실행하는 공통 품질 target을 만들었습니다.
+
+### 32. Kafka 발행 확인
+
+- API와 CLI replayer의 전송 로직을 공용화하고 producer queue-full 재시도, callback 오류,
+  flush 미전송을 테스트합니다. 발행 실패 시 CLI consumer offset은 commit하지 않습니다.
+
+### 33. API 모듈 경계
+
+- 환경 설정과 요청 모델을 진입점에서 분리하고 topic, isolation level, cache 값의 잘못된 조합을
+  시작 단계에서 거부합니다.
+
+### 34. Flink 상태 식별자
+
+- source, 변환, window, sink에 고정 UID를 부여하고 UID의 유일성과 버전 형식을 테스트해
+  savepoint 복원 안정성을 높였습니다.
+
+### 35. Window state 크기
+
+- 사용자 burst window가 모든 원본 event를 보관하던 구조를 고정 크기 누적 통계로 바꾸고,
+  state schema 변경을 드러내도록 operator UID를 `v2`로 올렸습니다.
+
+### 36. Event ID 중복 제거
+
+- raw/replay topic의 같은 event를 24시간 TTL managed state로 제거하고 제거 건수를 Flink
+  counter로 노출했습니다. 이 기능과 sink exactly-once의 보장 범위도 구분했습니다.
+
+### 37. CDC 삭제 경로
+
+- 임시 가맹점 profile의 insert와 delete를 PostgreSQL에서 발생시키고 Kafka의 일반 event와
+  `__deleted=true` event를 실제로 확인하는 smoke target을 CI에 연결했습니다.
+
+### 38. Kubernetes 상태 복구
+
+- Flink image에 S3 filesystem plugin을 포함하고 prod-like overlay에 Kubernetes HA,
+  object storage HA metadata, standby JobManager 2개를 구성했습니다.
+
+### 39. Flink runtime 관측성
+
+- Prometheus reporter plugin과 JobManager/TaskManager scrape target을 추가하고 Kubernetes pod
+  discovery annotation, scrape 실패 alert, 운영 metric 해석 문서를 연결했습니다.
+
+### 40. 저장소 전체 정적 검사
+
+- CI가 Python 디렉터리를 자동 탐색해 compile하고 공용 helper test를 실행하도록 수정했습니다.
+- 모든 shell script를 자동 탐색해 구문 검사하고 README/docs의 깨진 상대 링크를 검출합니다.
+- S3 plugin과 관측성 설명을 현재 image 및 manifest와 다시 맞췄습니다.
+
 ## 검증 기준
 
 변경 완료 후 다음을 함께 통과해야 합니다.

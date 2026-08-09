@@ -9,7 +9,7 @@ API_CURL := curl -fsS $(if $(API_TOKEN),-H "X-API-Token: $(API_TOKEN)")
 .PHONY: consume-alerts consume-aggregates consume-dlq consume-replay consume-merchant-profiles
 .PHONY: schema-up schema-register cdc-up cdc-register cdc-update-merchant cdc-delete-merchant cdc-smoke observe-up
 .PHONY: chaos-kill-taskmanager chaos-restart-kafka savepoint smoke ci-smoke ci-smoke-exactly-once
-.PHONY: lint lint-python test test-flink test-api test-python
+.PHONY: lint lint-python validate-static test test-flink test-api test-python
 .PHONY: k8s-render-dev k8s-render-prod-like k8s-render-exactly-once clean
 
 build:
@@ -123,10 +123,14 @@ ci-smoke-exactly-once:
 	KAFKA_ISOLATION_LEVEL=read_committed \
 	./scripts/ci-e2e-smoke.sh
 
-lint: lint-python
+lint: lint-python validate-static
 
 lint-python:
 	docker build --target lint -t $(PROJECT_NAME)-python-lint -f Dockerfile.python-quality .
+
+validate-static:
+	find . -type f -name '*.sh' -not -path './.git/*' -print0 | xargs -0 bash -n
+	python3 scripts/validate_markdown_links.py
 
 test: test-flink test-python
 

@@ -36,7 +36,7 @@ wait_for_topic_count() {
 
   for _ in $(seq 1 "${attempts}"); do
     response="$(curl_api "http://localhost:8000/topics/${topic}/messages?limit=20&timeout_seconds=${api_timeout_seconds}&from_beginning=true")"
-    echo "${response}" | sed "s/^/${topic}: /"
+    printf '%s\n' "${response}" | awk -v prefix="${topic}: " '{print prefix $0}'
     if echo "${response}" | python3 -c "import json,sys; data=json.load(sys.stdin); raise SystemExit(0 if data.get('count', 0) >= ${min_count} else 1)"; then
       return 0
     fi

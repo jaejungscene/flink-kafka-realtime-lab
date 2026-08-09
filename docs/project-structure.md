@@ -145,8 +145,9 @@ Kubernetes manifests는 Strimzi Kafka Operator와 Flink Kubernetes Operator를 �
 | `k8s/overlays/exactly-once/` | Kafka transaction 기반 exactly-once sink 실습 |
 | `k8s/overlays/prod-like/` | Kafka node 3개, replicated topic, savepoint upgrade를 비교하는 검토용 설정 |
 
-`prod-like`에는 의도적인 object storage와 image placeholder가 있습니다. Filesystem plugin,
-인증, TLS, NetworkPolicy를 채우기 전에는 렌더링 비교용으로만 사용합니다.
+`prod-like`에는 의도적인 object storage와 image placeholder가 있습니다. S3 filesystem plugin은
+Flink image에 포함되어 있으며 인증, TLS, NetworkPolicy를 채우기 전에는 렌더링 비교용으로만
+사용합니다.
 
 ## 디렉터리별 책임
 

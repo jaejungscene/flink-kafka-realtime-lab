@@ -343,7 +343,7 @@ kubectl kustomize k8s/overlays/prod-like
 - topic replication factor
 - Flink TaskManager 수
 - Flink upgrade mode
-- object storage plugin과 인증이 필요한 checkpoint path placeholder
+- image에 포함된 S3 plugin과 별도로 인증이 필요한 checkpoint path placeholder
 
 학습 포인트:
 
