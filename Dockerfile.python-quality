@@ -1,0 +1,36 @@
+FROM python:3.12-slim AS dependencies
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /workspace
+
+COPY api/requirements.txt api/requirements-test.txt ./api/
+RUN pip install --no-cache-dir -r api/requirements-test.txt
+
+FROM dependencies AS sources
+
+COPY pyproject.toml ./
+COPY api ./api
+COPY cdc ./cdc
+COPY common ./common
+COPY generator ./generator
+COPY replayer ./replayer
+COPY scripts ./scripts
+
+FROM sources AS lint
+
+RUN ruff check api cdc common generator replayer scripts/*.py
+
+FROM lint AS test
+
+RUN python -m py_compile \
+        api/src/main.py \
+        cdc/register_postgres_connector.py \
+        common/python/realtime_lab/dlq_tools.py \
+        generator/src/producer.py \
+        replayer/src/replay_dlq.py \
+        scripts/register_schemas.py \
+        scripts/replay-dlq-api.py \
+    && PYTHONPATH=api:common/python python -m unittest discover -s api/tests \
+    && python -m unittest discover -s cdc/tests

@@ -200,14 +200,12 @@ Operator 사전 조건, image naming, 배포 순서는 [Kubernetes 가이드](do
 ## 테스트
 
 ```bash
+make lint
 make test
 make test-python
 docker compose --profile tools --profile schema --profile cdc --profile observability config
 make ci-smoke
 make ci-smoke-exactly-once
-python3 -m py_compile \
-  api/src/main.py cdc/register_postgres_connector.py common/python/realtime_lab/dlq_tools.py \
-  generator/src/producer.py replayer/src/replay_dlq.py scripts/*.py
 kubectl kustomize k8s/overlays/dev
 kubectl kustomize k8s/overlays/prod-like
 kubectl kustomize k8s/overlays/exactly-once
