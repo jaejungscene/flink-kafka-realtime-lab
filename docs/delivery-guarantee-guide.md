@@ -57,3 +57,13 @@ Job은 sink guarantee에 맞춰 Flink checkpoint mode도 명시적으로 설정�
 ## 이 프로젝트의 의도
 
 이 lab은 기본값을 보수적으로 `AT_LEAST_ONCE`로 둡니다. 학습자는 먼저 window, DLQ, replay, late event를 이해하고, 그 다음 `EXACTLY_ONCE` 모드로 바꾸어 checkpoint와 Kafka transaction이 어떤 추가 조건을 요구하는지 확인할 수 있습니다.
+
+## Event ID 중복 제거의 범위
+
+원천 topic과 replay topic에 같은 `eventId`가 들어오면 Flink managed state가 24시간 동안 두 번째
+이벤트를 제거합니다. TTL은 `DEDUPLICATION_TTL_HOURS`로 조정하며
+`duplicate_events_total` metric으로 제거 건수를 확인합니다.
+
+이 기능은 동일 event의 업무 중복을 막는 방어선입니다. Checkpoint 이후 sink commit 전에 장애가 난
+경우까지 해결하는 end-to-end exactly-once 기능은 아니므로, 그 보장은 Flink checkpoint와 Kafka
+transaction, `read_committed` consumer를 함께 사용해야 합니다.

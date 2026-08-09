@@ -26,6 +26,7 @@ public record JobConfig(
         Duration allowedLateness,
         Duration sourceIdleTimeout,
         Duration maxFutureSkew,
+        Duration deduplicationTtl,
         SourceStartupMode sourceStartupMode,
         String transactionalIdPrefix,
         RiskRuleConfig riskRules) {
@@ -46,6 +47,7 @@ public record JobConfig(
             "allowedLatenessSeconds",
             "sourceIdleTimeoutSeconds",
             "maxFutureSkewSeconds",
+            "deduplicationTtlHours",
             "sourceStartupMode",
             "transactionalIdPrefix",
             "riskHighFraudScore",
@@ -75,6 +77,7 @@ public record JobConfig(
                 Duration.ofSeconds(nonNegativeLong(params, "allowedLatenessSeconds", 30L)),
                 Duration.ofSeconds(positiveLong(params, "sourceIdleTimeoutSeconds", 30L)),
                 Duration.ofSeconds(nonNegativeLong(params, "maxFutureSkewSeconds", 300L)),
+                Duration.ofHours(positiveLong(params, "deduplicationTtlHours", 24L)),
                 SourceStartupMode.parse(params.getOrDefault("sourceStartupMode", "LATEST")),
                 value(params, "transactionalIdPrefix", "realtime-lab"),
                 new RiskRuleConfig(

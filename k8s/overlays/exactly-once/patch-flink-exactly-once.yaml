@@ -38,6 +38,8 @@ spec:
       - "30"
       - --maxFutureSkewSeconds
       - "300"
+      - --deduplicationTtlHours
+      - "24"
       - --sourceStartupMode
       - LATEST
       - --transactionalIdPrefix

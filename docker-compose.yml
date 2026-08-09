@@ -137,6 +137,8 @@ services:
       - "30"
       - --maxFutureSkewSeconds
       - "300"
+      - --deduplicationTtlHours
+      - ${DEDUPLICATION_TTL_HOURS:-24}
       - --sourceStartupMode
       - LATEST
       - --transactionalIdPrefix

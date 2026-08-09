@@ -96,11 +96,17 @@ public class RealTimeAlertJob {
                 .name("parse-merchant-profiles")
                 .uid(OperatorUids.PARSE_MERCHANT_PROFILES);
 
+        SingleOutputStreamOperator<TransactionEvent> deduplicatedEvents = parsedEvents
+                .keyBy(TransactionEvent::getEventId)
+                .process(new EventDeduplicator(config.deduplicationTtl()))
+                .name("deduplicate-event-ids")
+                .uid(OperatorUids.DEDUPLICATE_EVENTS);
+
         MapStateDescriptor<String, MerchantRiskProfile> merchantProfileState = merchantProfileStateDescriptor();
         BroadcastStream<MerchantRiskProfile> merchantProfileBroadcast =
                 merchantProfiles.broadcast(merchantProfileState);
 
-        SingleOutputStreamOperator<TransactionEvent> enrichedEvents = parsedEvents
+        SingleOutputStreamOperator<TransactionEvent> enrichedEvents = deduplicatedEvents
                 .connect(merchantProfileBroadcast)
                 .process(new MerchantRiskProfileEnrichmentFunction(merchantProfileState))
                 .name("enrich-with-merchant-risk-profiles")

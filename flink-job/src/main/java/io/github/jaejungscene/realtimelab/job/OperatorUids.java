@@ -5,6 +5,7 @@ import java.util.List;
 final class OperatorUids {
     static final String TRANSACTIONS_SOURCE = "transactions-source-v1";
     static final String PARSE_TRANSACTIONS = "parse-transactions-v1";
+    static final String DEDUPLICATE_EVENTS = "deduplicate-events-v1";
     static final String MERCHANT_PROFILE_SOURCE = "merchant-profile-source-v1";
     static final String PARSE_MERCHANT_PROFILES = "parse-merchant-profiles-v1";
     static final String ENRICH_MERCHANT_RISK = "enrich-merchant-risk-v1";
@@ -30,6 +31,7 @@ final class OperatorUids {
         return List.of(
                 TRANSACTIONS_SOURCE,
                 PARSE_TRANSACTIONS,
+                DEDUPLICATE_EVENTS,
                 MERCHANT_PROFILE_SOURCE,
                 PARSE_MERCHANT_PROFILES,
                 ENRICH_MERCHANT_RISK,

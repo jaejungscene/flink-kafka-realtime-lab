@@ -52,6 +52,9 @@ class JobConfigTest {
                 () -> JobConfig.fromArgs(new String[]{"--checkpointIntervalMillis", "0"}));
         assertThrows(
                 IllegalArgumentException.class,
+                () -> JobConfig.fromArgs(new String[]{"--deduplicationTtlHours", "0"}));
+        assertThrows(
+                IllegalArgumentException.class,
                 () -> JobConfig.fromArgs(new String[]{
                         "--rawTopic", "same",
                         "--replayTopic", "same"}));
@@ -82,10 +85,12 @@ class JobConfigTest {
     void parsesSourceIsolationAndRiskRuleArguments() {
         JobConfig config = JobConfig.fromArgs(new String[]{
                 "--sourceIsolationLevel", "read_committed",
+                "--deduplicationTtlHours", "48",
                 "--riskHighFraudScore", "0.8",
                 "--riskBurstCountThreshold", "7"});
 
         assertEquals(JobConfig.KafkaIsolationLevel.READ_COMMITTED, config.sourceIsolationLevel());
+        assertEquals(48, config.deduplicationTtl().toHours());
         assertEquals(0.8, config.riskRules().highFraudScore());
         assertEquals(7, config.riskRules().burstCountThreshold());
     }
