@@ -28,9 +28,11 @@ RUN python -m py_compile \
         api/src/main.py \
         cdc/register_postgres_connector.py \
         common/python/realtime_lab/dlq_tools.py \
+        common/python/realtime_lab/kafka_delivery.py \
         generator/src/producer.py \
         replayer/src/replay_dlq.py \
         scripts/register_schemas.py \
         scripts/replay-dlq-api.py \
+    && PYTHONPATH=common/python python -m unittest discover -s common/python/tests \
     && PYTHONPATH=api:common/python python -m unittest discover -s api/tests \
     && python -m unittest discover -s cdc/tests

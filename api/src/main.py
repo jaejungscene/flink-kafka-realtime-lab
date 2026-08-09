@@ -23,6 +23,11 @@ from realtime_lab.dlq_tools import (
     summarize_dlq_records,
     to_dlq_sample,
 )
+from realtime_lab.kafka_delivery import (
+    KafkaDeliveryError,
+    KafkaPublishRecord,
+    publish_and_wait,
+)
 
 
 def _non_negative_float_setting(name: str, fallback: float) -> float:
@@ -489,7 +494,7 @@ def replay_dlq(request: DlqReplayRequest) -> dict[str, Any]:
 
     replay_run_id = request.replay_run_id or f"api-preview-{uuid.uuid4()}"
     producer = None
-    delivery_errors: list[str] = []
+    publish_records: list[KafkaPublishRecord] = []
     replayed: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     replay_time = int(time.time() * 1000)
@@ -503,10 +508,6 @@ def replay_dlq(request: DlqReplayRequest) -> dict[str, Any]:
                 "enable.idempotence": True,
             }
         )
-
-    def delivery_report(error, _message) -> None:
-        if error is not None:
-            delivery_errors.append(str(error))
 
     for record in messages:
         value = record.get("value")
@@ -550,29 +551,26 @@ def replay_dlq(request: DlqReplayRequest) -> dict[str, Any]:
         )
 
         if producer is not None:
-            producer.produce(
-                REPLAY_TOPIC,
-                key=event["userId"],
-                value=json.dumps(event, separators=(",", ":")),
-                callback=delivery_report,
+            publish_records.append(
+                KafkaPublishRecord(
+                    topic=REPLAY_TOPIC,
+                    key=event["userId"],
+                    value=json.dumps(event, separators=(",", ":")),
+                )
             )
-            producer.poll(0)
 
         if len(replayed) >= request.max_messages:
             break
 
     if producer is not None:
-        undelivered = producer.flush(10)
-        if undelivered or delivery_errors:
-            logger.error(
-                "Kafka replay delivery failed: undelivered=%s errors=%s",
-                undelivered,
-                delivery_errors[:3],
-            )
+        try:
+            publish_and_wait(producer, publish_records)
+        except KafkaDeliveryError:
+            logger.exception("Kafka replay delivery failed")
             raise HTTPException(
                 status_code=502,
                 detail="Kafka replay delivery failed",
-            )
+            ) from None
 
     return {
         "runId": replay_run_id,

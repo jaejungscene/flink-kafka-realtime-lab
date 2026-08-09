@@ -9,6 +9,7 @@ from realtime_lab.dlq_tools import (
     replay_block_reason,
     validate_replay_run_id,
 )
+from realtime_lab.kafka_delivery import KafkaPublishRecord, publish_and_wait
 
 
 def non_blank_setting(name: str, fallback: str) -> str:
@@ -75,13 +76,9 @@ def main() -> None:
     consumer.subscribe([DLQ_TOPIC])
     replayed = 0
     consumed = 0
-    delivery_errors: list[str] = []
+    publish_records: list[KafkaPublishRecord] = []
     deadline = time.monotonic() + 20
     completed = False
-
-    def delivery_report(error, _message) -> None:
-        if error is not None:
-            delivery_errors.append(str(error))
 
     try:
         while replayed < MAX_MESSAGES and time.monotonic() < deadline:
@@ -121,22 +118,17 @@ def main() -> None:
                 )
                 continue
 
-            producer.produce(
-                REPLAY_TOPIC,
-                key=event["userId"],
-                value=json.dumps(event, separators=(",", ":")),
-                callback=delivery_report,
+            publish_records.append(
+                KafkaPublishRecord(
+                    topic=REPLAY_TOPIC,
+                    key=event["userId"],
+                    value=json.dumps(event, separators=(",", ":")),
+                )
             )
-            producer.poll(0)
             replayed += 1
+        publish_and_wait(producer, publish_records)
         completed = True
     finally:
-        undelivered = producer.flush(10)
-        if undelivered or delivery_errors:
-            consumer.close()
-            raise RuntimeError(
-                f"replay delivery failed: undelivered={undelivered}, errors={delivery_errors[:3]}"
-            )
         if completed and consumed:
             consumer.commit(asynchronous=False)
         consumer.close()
