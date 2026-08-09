@@ -12,7 +12,7 @@
 - Kafka listener TLS 및 사용자 인증, NetworkPolicy, secret 연동
 - 실제 registry image 주소와 immutable tag 또는 digest 지정
 - 조직의 resource quota, PodDisruptionBudget, topology spread 정책 반영
-- Prometheus/Flink metric reporter, alert routing, SLO 기준 연결
+- Prometheus pod discovery, alert routing, SLO 기준 연결
 
 값을 교체하기 전에는 `kubectl apply`가 아니라 아래 명령으로 렌더링 결과만
 검토하십시오.

@@ -17,6 +17,15 @@ groups:
         annotations:
           summary: Realtime Lab API cannot collect Kafka metrics
 
+      - alert: RealtimeLabFlinkMetricsDown
+        expr: up{job=~"flink-(jobmanager|taskmanager)"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Flink runtime metrics endpoint is unreachable
+          description: "{{ $labels.job }} target {{ $labels.instance }} is down"
+
       - alert: RealtimeLabConsumerLagHigh
         expr: sum by (group, topic) (realtime_lab_kafka_consumer_lag) > 200
         for: 2m

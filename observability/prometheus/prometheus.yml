@@ -13,3 +13,11 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets: [ "api:8000" ]
+
+  - job_name: flink-jobmanager
+    static_configs:
+      - targets: [ "flink-jobmanager:9249" ]
+
+  - job_name: flink-taskmanager
+    static_configs:
+      - targets: [ "flink-taskmanager:9249" ]

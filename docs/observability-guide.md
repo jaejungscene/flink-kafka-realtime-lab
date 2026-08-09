@@ -24,7 +24,8 @@ make load-snapshot
 ## 제공 metric
 
 FastAPI의 `/metrics` endpoint가 Kafka offset을 읽어 Prometheus 형식으로 노출합니다.
-Kafka 조회 부하를 줄이기 위해 결과를 기본 10초 동안 cache합니다.
+Kafka 조회 부하를 줄이기 위해 결과를 기본 10초 동안 cache합니다. Flink runtime image에는
+Prometheus reporter plugin이 포함되어 JobManager와 TaskManager의 `9249` port도 수집합니다.
 
 | Metric | 의미 |
 | --- | --- |
@@ -35,6 +36,17 @@ Kafka 조회 부하를 줄이기 위해 결과를 기본 10초 동안 cache합�
 | `realtime_lab_kafka_topic_log_end_offset` | partition log end offset |
 | `realtime_lab_kafka_consumer_lag` | `flink-realtime-lab` group의 partition별 lag |
 | `realtime_lab_metrics_partition_errors` | offset 조회에 실패한 partition 수 |
+
+Flink metric은 job, task, operator scope가 이름 앞에 붙습니다. Prometheus에서 다음 suffix로
+검색하면 checkpoint, 처리량, 중복 제거 상태를 빠르게 찾을 수 있습니다.
+
+| 검색 suffix | 의미 |
+| --- | --- |
+| `numRecordsIn`, `numRecordsOut` | operator 입력/출력 처리량 |
+| `currentInputWatermark` | event-time 진행 상태 |
+| `numberOfCompletedCheckpoints`, `numberOfFailedCheckpoints` | checkpoint 성공/실패 |
+| `lastCheckpointDuration` | 최근 checkpoint 소요 시간 |
+| `duplicate_events_total` | TTL state가 제거한 중복 event 수 |
 
 `retained_records`는 정확한 메시지 개수가 아닙니다. 삭제·압축으로 offset 사이에 빈
 구간이 생길 수 있으므로 추세와 대략적인 backlog 크기를 보는 용도로만 사용합니다.
@@ -64,9 +76,7 @@ lab 부하에 맞춘 값이므로 실제 SLO로 그대로 사용하지 않습니
 
 운영에서는 이 starter dashboard에 아래 지표를 추가하는 것이 좋습니다.
 
-- Flink checkpoint duration/failure
 - Flink restart count
-- records in/out per second
 - Kafka broker network/request metric
 - end-to-end latency
 - DLQ reason별 count
