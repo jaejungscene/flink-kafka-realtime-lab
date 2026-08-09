@@ -15,5 +15,7 @@ FROM flink:2.1.2-scala_2.12-java17 AS runtime
 COPY --chown=flink:flink --from=build /workspace/target/realtime-lab-flink-job-1.0.0.jar /opt/flink/usrlib/realtime-lab-flink-job.jar
 COPY --chown=flink:flink docker/submit-job.sh /opt/flink/bin/submit-job.sh
 RUN chmod 0755 /opt/flink/bin/submit-job.sh \
+    && mkdir -p /opt/flink/plugins/s3-fs-hadoop \
+    && cp /opt/flink/opt/flink-s3-fs-hadoop-*.jar /opt/flink/plugins/s3-fs-hadoop/ \
     && mkdir -p /opt/flink/state/checkpoints /opt/flink/state/savepoints \
-    && chown -R flink:flink /opt/flink/state
+    && chown -R flink:flink /opt/flink/state /opt/flink/plugins/s3-fs-hadoop

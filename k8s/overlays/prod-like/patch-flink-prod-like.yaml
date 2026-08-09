@@ -9,7 +9,10 @@ spec:
     execution.checkpointing.interval: "10000"
     execution.checkpointing.dir: s3://replace-me-realtime-lab/flink/checkpoints
     execution.checkpointing.savepoint-dir: s3://replace-me-realtime-lab/flink/savepoints
+    high-availability.type: kubernetes
+    high-availability.storageDir: s3://replace-me-realtime-lab/flink/ha
   jobManager:
+    replicas: 2
     resource:
       memory: "2048m"
       cpu: 1
