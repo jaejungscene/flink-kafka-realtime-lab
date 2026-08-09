@@ -149,7 +149,9 @@ public class RealTimeAlertJob {
                 .keyBy(TransactionEvent::getUserId)
                 .window(TumblingEventTimeWindows.of(WINDOW_SIZE))
                 .allowedLateness(allowedLateness)
-                .process(new UserWindowAlertFunction(riskRules))
+                .aggregate(
+                        new TransactionStatsAggregate(riskRules),
+                        new UserWindowAlertFunction(riskRules))
                 .name("user-window-alerts")
                 .uid(OperatorUids.USER_WINDOW_ALERTS);
 
@@ -321,7 +323,7 @@ public class RealTimeAlertJob {
     }
 
     static class UserWindowAlertFunction
-            extends ProcessWindowFunction<TransactionEvent, AlertEvent, String, TimeWindow> {
+            extends ProcessWindowFunction<TransactionStats, AlertEvent, String, TimeWindow> {
         private final RiskRules riskRules;
 
         UserWindowAlertFunction(RiskRules riskRules) {
@@ -332,19 +334,11 @@ public class RealTimeAlertJob {
         public void process(
                 String userId,
                 Context context,
-                Iterable<TransactionEvent> events,
+                Iterable<TransactionStats> stats,
                 Collector<AlertEvent> out) {
-            long count = 0;
-            double totalAmount = 0.0;
-            String sampleEventId = null;
-
-            for (TransactionEvent event : events) {
-                count++;
-                totalAmount += event.getAmount();
-                if (sampleEventId == null || event.getEventId().compareTo(sampleEventId) < 0) {
-                    sampleEventId = event.getEventId();
-                }
-            }
+            TransactionStats stat = stats.iterator().next();
+            long count = stat.count();
+            double totalAmount = stat.totalAmount();
 
             if (riskRules.isBurst(count, totalAmount)) {
                 boolean amountTriggered = totalAmount >= riskRules.config().burstAmountThreshold();
@@ -363,7 +357,7 @@ public class RealTimeAlertJob {
                         context.window().getEnd(),
                         amountTriggered ? "totalAmount" : "eventCount",
                         amountTriggered ? totalAmount : count,
-                        sampleEventId));
+                        stat.sampleEventId()));
             }
         }
     }
@@ -393,6 +387,22 @@ public class RealTimeAlertJob {
                 sampleEventId = other.sampleEventId;
             }
             return this;
+        }
+
+        long count() {
+            return count;
+        }
+
+        double totalAmount() {
+            return totalAmount;
+        }
+
+        double averageFraudScore() {
+            return count == 0 ? 0.0 : totalFraudScore / count;
+        }
+
+        String sampleEventId() {
+            return sampleEventId;
         }
     }
 
@@ -440,10 +450,11 @@ public class RealTimeAlertJob {
             aggregate.setKey(key);
             aggregate.setWindowStart(context.window().getStart());
             aggregate.setWindowEnd(context.window().getEnd());
-            aggregate.setEventCount(stat.count);
-            aggregate.setTotalAmount(round(stat.totalAmount));
-            aggregate.setAvgAmount(stat.count == 0 ? 0.0 : round(stat.totalAmount / stat.count));
-            aggregate.setAvgFraudScore(stat.count == 0 ? 0.0 : round(stat.totalFraudScore / stat.count));
+            aggregate.setEventCount(stat.count());
+            aggregate.setTotalAmount(round(stat.totalAmount()));
+            aggregate.setAvgAmount(
+                    stat.count() == 0 ? 0.0 : round(stat.totalAmount() / stat.count()));
+            aggregate.setAvgFraudScore(round(stat.averageFraudScore()));
             out.collect(aggregate);
         }
     }
@@ -463,21 +474,22 @@ public class RealTimeAlertJob {
                 Iterable<TransactionStats> stats,
                 Collector<AlertEvent> out) {
             TransactionStats stat = stats.iterator().next();
-            double avgFraudScore = stat.count == 0 ? 0.0 : stat.totalFraudScore / stat.count;
-            if (!riskRules.isMerchantAnomaly(stat.count, stat.totalAmount, avgFraudScore)) {
+            double avgFraudScore = stat.averageFraudScore();
+            if (!riskRules.isMerchantAnomaly(stat.count(), stat.totalAmount(), avgFraudScore)) {
                 return;
             }
 
             String reason = "merchant window anomaly; count="
-                    + stat.count
+                    + stat.count()
                     + ", totalAmount="
-                    + String.format(Locale.ROOT, "%.2f", stat.totalAmount)
+                    + String.format(Locale.ROOT, "%.2f", stat.totalAmount())
                     + ", avgFraudScore="
                     + String.format(Locale.ROOT, "%.4f", avgFraudScore);
 
             boolean riskTriggered = avgFraudScore
                     >= riskRules.config().merchantAvgFraudScoreThreshold();
-            boolean amountTriggered = stat.totalAmount >= riskRules.config().merchantAmountThreshold();
+            boolean amountTriggered = stat.totalAmount()
+                    >= riskRules.config().merchantAmountThreshold();
             out.collect(AlertEvent.of(
                     "MERCHANT_ANOMALY",
                     riskTriggered ? "CRITICAL" : "WARN",
@@ -487,8 +499,10 @@ public class RealTimeAlertJob {
                     context.window().getEnd(),
                     context.window().getEnd(),
                     riskTriggered ? "avgFraudScore" : amountTriggered ? "totalAmount" : "eventCount",
-                    riskTriggered ? avgFraudScore : amountTriggered ? stat.totalAmount : stat.count,
-                    stat.sampleEventId));
+                    riskTriggered
+                            ? avgFraudScore
+                            : amountTriggered ? stat.totalAmount() : stat.count(),
+                    stat.sampleEventId()));
         }
     }
 

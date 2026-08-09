@@ -73,7 +73,8 @@ Flink job의 핵심 파일은
 5. transaction의 `merchantId`와 risk profile을 join해 fraud score multiplier와 manual review flag를 반영합니다.
 6. enrichment를 마친 정상 이벤트에 `eventTime` watermark를 부여합니다.
 7. 고위험 단건 이벤트는 `HIGH_RISK_TRANSACTION` 알람으로 보냅니다.
-8. 사용자별 1분 window에서 burst 조건을 판단해 `USER_PAYMENT_BURST` 알람을 만듭니다.
+8. 사용자별 1분 window는 원본 전체가 아닌 누적 통계만 state에 저장하고, burst 조건을 판단해
+   `USER_PAYMENT_BURST` 알람을 만듭니다.
 9. 국가/카테고리/가맹점 기준 1분 집계를 `transactions.aggregates`로 보냅니다.
 10. 가맹점별 1분 window에서 이상 징후를 판단해 `MERCHANT_ANOMALY` 알람을 만듭니다.
 11. 허용 지연 시간을 넘긴 late event는 원본 Kafka 좌표와 함께 `transactions.dlq`에 보냅니다.

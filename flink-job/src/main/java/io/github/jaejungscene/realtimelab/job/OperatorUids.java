@@ -15,7 +15,7 @@ final class OperatorUids {
     static final String HIGH_RISK_FILTER = "high-risk-filter-v1";
     static final String HIGH_RISK_ALERT_MAPPER = "high-risk-alert-mapper-v1";
     static final String HIGH_RISK_ALERT_SINK = "high-risk-alert-sink-v1";
-    static final String USER_WINDOW_ALERTS = "user-window-alerts-v1";
+    static final String USER_WINDOW_ALERTS = "user-window-alerts-v2";
     static final String USER_WINDOW_ALERT_SINK = "user-window-alert-sink-v1";
     static final String TRANSACTION_AGGREGATES = "transaction-aggregates-v1";
     static final String TRANSACTION_AGGREGATE_SINK = "transaction-aggregate-sink-v1";
