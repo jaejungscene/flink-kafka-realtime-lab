@@ -40,8 +40,9 @@ Generator를 core overlay와 분리한 이유는 `LATEST` source가 준비되기
 
 `Kafka`, `KafkaTopic`, `KafkaNodePool`, `FlinkDeployment`는 custom resource입니다. 따라서 Strimzi와 Flink Operator CRD가 먼저 설치되어 있어야 합니다.
 
-API 인증을 켜려면 apply 전에 Secret을 만듭니다. dev/base에서는 누락을 허용하지만
-prod-like overlay는 이 Secret을 필수로 요구합니다.
+API는 모든 overlay에서 Secret을 필수로 요구합니다. dev와 exactly-once overlay는 학습용
+`dev-only-change-me` token을 생성하므로 공유 환경에 그대로 노출하면 안 됩니다. prod-like는
+Secret을 저장소에서 만들지 않으므로 apply 전에 secret manager 또는 다음 예시로 생성합니다.
 
 ```bash
 kubectl apply -f k8s/base/namespace.yaml
@@ -59,6 +60,8 @@ kubectl -n realtime-lab create secret generic realtime-lab-api-secrets \
 - Flink TaskManager 1개
 - stateless Flink upgrade mode
 - opt-in generator Job은 Flink 준비 확인 후 별도 실행
+- API 개발용 token은 `dev-only-change-me`
+- Flink JobManager/TaskManager는 UID/GID `9999` non-root로 실행
 
 ## Prod-like 검토 Overlay
 

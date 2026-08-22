@@ -10,6 +10,7 @@
 - Flink image에는 S3 filesystem plugin이 포함되어 있습니다. Workload Identity, IRSA 또는
   secret 기반 인증 중 cluster 표준 방식을 연결하고 bucket 권한을 최소화
 - Kafka listener TLS 및 사용자 인증, NetworkPolicy, secret 연동
+- `realtime-lab-api-secrets`를 외부 secret manager로 생성하고 token rotation 절차 연결
 - 실제 registry image 주소와 immutable tag 또는 digest 지정
 - 조직의 resource quota, PodDisruptionBudget, topology spread 정책 반영
 - Prometheus pod discovery, alert routing, SLO 기준 연결

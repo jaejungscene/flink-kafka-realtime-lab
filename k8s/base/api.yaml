@@ -31,7 +31,7 @@ spec:
                 secretKeyRef:
                   name: realtime-lab-api-secrets
                   key: api-token
-                  optional: true
+                  optional: false
           ports:
             - containerPort: 8000
           resources:

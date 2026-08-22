@@ -2,6 +2,13 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../base
+secretGenerator:
+  - name: realtime-lab-api-secrets
+    namespace: realtime-lab
+    literals:
+      - api-token=dev-only-change-me
+generatorOptions:
+  disableNameSuffixHash: true
 patches:
   - path: patch-flink-dev.yaml
     target:
