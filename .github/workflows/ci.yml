@@ -55,7 +55,7 @@ jobs:
           cache-dependency-path: |
             api/requirements.txt
             api/requirements-test.txt
-      - uses: azure/setup-kubectl@v4
+      - uses: azure/setup-kubectl@v5
       - name: Install API test dependencies
         run: python -m pip install -r api/requirements-test.txt
       - name: Compile Python tools
