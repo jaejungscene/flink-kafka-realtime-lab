@@ -140,7 +140,8 @@ Kubernetes manifests는 Strimzi Kafka Operator와 Flink Kubernetes Operator를 �
 
 | 경로 | 목적 |
 | --- | --- |
-| `k8s/base/` | 공통 리소스: Namespace, Kafka, KafkaNodePool, KafkaTopic, FlinkDeployment, API, generator Job |
+| `k8s/base/` | 공통 리소스: Namespace, Kafka, KafkaNodePool, KafkaTopic, FlinkDeployment, API |
+| `k8s/tools/generator/` | Flink 준비 후 명시적으로 실행하는 테스트 event Job |
 | `k8s/overlays/dev/` | 로컬/개발 클러스터용 가벼운 실행값 |
 | `k8s/overlays/exactly-once/` | Kafka transaction 기반 exactly-once sink 실습 |
 | `k8s/overlays/prod-like/` | Kafka node 3개, replicated topic, savepoint upgrade를 비교하는 검토용 설정 |

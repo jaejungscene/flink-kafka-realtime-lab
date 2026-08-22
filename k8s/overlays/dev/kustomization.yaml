@@ -7,7 +7,3 @@ patches:
     target:
       kind: FlinkDeployment
       name: realtime-lab-flink
-  - path: patch-generator-dev.yaml
-    target:
-      kind: Job
-      name: realtime-lab-generator

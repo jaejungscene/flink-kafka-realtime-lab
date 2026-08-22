@@ -28,6 +28,16 @@ kubectl apply -k k8s/overlays/dev
 kubectl -n realtime-lab get kafka,kafkatopic,flinkdeployment,pod
 ```
 
+Flink job이 `RUNNING`인 것을 확인한 뒤 테스트 event를 별도로 생성합니다.
+
+```bash
+make k8s-run-generator
+kubectl -n realtime-lab logs job/realtime-lab-generator -f
+```
+
+Generator를 core overlay와 분리한 이유는 `LATEST` source가 준비되기 전에 Job이 먼저
+종료되어 초기 event를 놓치는 배포 race를 막기 위해서입니다.
+
 `Kafka`, `KafkaTopic`, `KafkaNodePool`, `FlinkDeployment`는 custom resource입니다. 따라서 Strimzi와 Flink Operator CRD가 먼저 설치되어 있어야 합니다.
 
 API 인증을 켜려면 apply 전에 Secret을 만듭니다. dev/base에서는 누락을 허용하지만
@@ -48,7 +58,7 @@ kubectl -n realtime-lab create secret generic realtime-lab-api-secrets \
 - ephemeral Kafka storage
 - Flink TaskManager 1개
 - stateless Flink upgrade mode
-- 짧은 generator 실행
+- opt-in generator Job은 Flink 준비 확인 후 별도 실행
 
 ## Prod-like 검토 Overlay
 

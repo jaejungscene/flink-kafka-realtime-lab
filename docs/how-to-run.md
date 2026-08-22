@@ -308,13 +308,14 @@ kubectl -n realtime-lab get pods
 
 ### 4단계: Kubernetes에서 Generator 실행
 
-`k8s/base/generator-job.yaml`은 generator를 Kubernetes Job으로 실행합니다. 이미 overlay에 포함되어 있으므로 apply 시 함께 생성됩니다.
+`k8s/tools/generator/generator-job.yaml`은 core overlay와 분리된 실행 도구입니다. Flink
+job이 `RUNNING`인 것을 확인한 뒤 opt-in으로 실행합니다.
 
 다시 실행하려면 기존 Job을 지운 뒤 재적용합니다.
 
 ```bash
-kubectl -n realtime-lab delete job realtime-lab-generator --ignore-not-found
-kubectl apply -k k8s/overlays/dev
+make k8s-run-generator
+kubectl -n realtime-lab logs job/realtime-lab-generator -f
 ```
 
 ### 5단계: API 접근

@@ -9,4 +9,3 @@ resources:
   - flink-rbac.yaml
   - flink-deployment.yaml
   - api.yaml
-  - generator-job.yaml

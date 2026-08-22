@@ -24,9 +24,9 @@ spec:
                 name: realtime-lab-config
           env:
             - name: EVENTS_PER_SECOND
-              value: "25"
+              value: "15"
             - name: RUN_SECONDS
-              value: "120"
+              value: "60"
           resources:
             requests:
               cpu: 50m

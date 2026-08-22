@@ -10,7 +10,7 @@ API_CURL := curl -fsS $(if $(API_TOKEN),-H "X-API-Token: $(API_TOKEN)")
 .PHONY: schema-up schema-register cdc-up cdc-register cdc-update-merchant cdc-delete-merchant cdc-smoke observe-up
 .PHONY: chaos-kill-taskmanager chaos-restart-kafka savepoint smoke ci-smoke ci-smoke-exactly-once
 .PHONY: lint lint-python validate-static test test-flink test-api test-python
-.PHONY: k8s-render-dev k8s-render-prod-like k8s-render-exactly-once clean
+.PHONY: k8s-render-dev k8s-render-prod-like k8s-render-exactly-once k8s-run-generator clean
 
 build:
 	$(COMPOSE) --profile tools --profile schema --profile cdc --profile observability build
@@ -151,6 +151,10 @@ k8s-render-prod-like:
 
 k8s-render-exactly-once:
 	kubectl kustomize k8s/overlays/exactly-once
+
+k8s-run-generator:
+	kubectl -n realtime-lab delete job realtime-lab-generator --ignore-not-found
+	kubectl apply -k k8s/tools/generator
 
 clean:
 	$(COMPOSE) down -v --remove-orphans
