@@ -36,6 +36,30 @@ def boolean_setting(name: str, fallback: bool) -> bool:
     return normalized == "true"
 
 
+def produce_with_backpressure_retry(
+    producer,
+    topic: str,
+    *,
+    key: str,
+    value: str,
+    callback,
+    timeout_seconds: float = 10.0,
+) -> None:
+    if timeout_seconds <= 0:
+        raise ValueError("timeout_seconds must be greater than 0")
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        try:
+            producer.produce(topic, key=key, value=value, callback=callback)
+            producer.poll(0)
+            return
+        except BufferError as exc:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError("Kafka producer queue remained full") from exc
+            producer.poll(min(0.1, remaining))
+
+
 BOOTSTRAP_SERVERS = non_blank_setting("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092")
 RAW_TOPIC = non_blank_setting("RAW_TOPIC", "transactions.raw")
 EVENTS_PER_SECOND = positive_int_setting("EVENTS_PER_SECOND", 20)
@@ -133,8 +157,13 @@ def main() -> None:
             payload = json.dumps(event, separators=(",", ":"))
             key = event["userId"]
 
-        producer.produce(RAW_TOPIC, key=key, value=payload, callback=delivery_report)
-        producer.poll(0)
+        produce_with_backpressure_retry(
+            producer,
+            RAW_TOPIC,
+            key=key,
+            value=payload,
+            callback=delivery_report,
+        )
         time.sleep(delay)
 
     undelivered = producer.flush(10)

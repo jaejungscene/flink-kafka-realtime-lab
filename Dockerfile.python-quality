@@ -38,4 +38,5 @@ RUN python -m py_compile \
         scripts/validate_markdown_links.py \
     && PYTHONPATH=common/python python -m unittest discover -s common/python/tests \
     && PYTHONPATH=api:common/python python -m unittest discover -s api/tests \
+    && PYTHONPATH=generator python -m unittest discover -s generator/tests \
     && python -m unittest discover -s cdc/tests

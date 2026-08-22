@@ -67,6 +67,8 @@ make load-experiment
 
 ## 실무 튜닝 포인트
 
+- Generator는 client queue가 일시적으로 가득 차면 최대 10초 동안 `poll`하며 재시도합니다.
+  이 시간이 지나도 queue가 비워지지 않으면 성공으로 숨기지 않고 실행을 실패시킵니다.
 - Kafka partition 수와 Flink parallelism을 함께 봅니다.
 - source 처리량만 보지 말고 sink commit, checkpoint, window operator를 같이 봅니다.
 - `EXACTLY_ONCE` 모드는 transaction/checkpoint 비용 때문에 같은 부하에서 더 늦게 보일 수 있습니다.

@@ -66,6 +66,8 @@ jobs:
         run: PYTHONPATH=api:common/python python3 -m unittest discover -s api/tests
       - name: Test CDC connector registrar
         run: python3 -m unittest discover -s cdc/tests
+      - name: Test generator delivery behavior
+        run: PYTHONPATH=generator python3 -m unittest discover -s generator/tests
       - name: Lint Python sources
         run: ruff check api cdc common generator replayer scripts/*.py
       - name: Validate JSON schema and dashboard files
