@@ -65,6 +65,11 @@ LOAD_RUN_SECONDS=300 LOAD_EVENTS_PER_SECOND=250 make load-experiment
 
 ## Savepoint
 
+기본 checkpoint 정책은 10초 interval, 2분 timeout, 5초 minimum pause, 동시 실행 1개,
+연속 실패 3개 허용입니다. 일시적인 storage 지연은 흡수하되 네 번째 실패에서는 job을
+재시작해 상태 보호 없이 처리가 계속되는 상황을 막습니다. 운영에서는 state 크기와
+checkpoint SLO에 맞춰 이 값을 조정합니다.
+
 이 job은 source, 변환, window, sink에 고정된 operator UID를 사용합니다. 표시 이름이나 코드 순서를
 바꿔도 UID가 유지되면 Flink가 savepoint의 상태를 같은 operator에 연결할 수 있습니다. 상태 구조를
 의도적으로 바꾸는 경우에만 UID의 버전을 올리고, 배포 전에 기존 savepoint 복원 가능성을 검증합니다.

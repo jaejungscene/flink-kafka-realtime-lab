@@ -66,6 +66,7 @@ curl http://localhost:8083/connectors
 - `make load-snapshot`으로 Flink vertex 상태와 topic별 보존 레코드 추정치를 함께 확인합니다.
 - Flink parallelism을 늘리기 전에 Kafka partition 수를 먼저 확인합니다.
 - Flink UI에서 backpressure와 checkpoint failure를 확인합니다.
+- checkpoint가 2분 timeout 또는 연속 실패 허용치 3회를 넘는지 확인합니다.
 
 ### Exactly-once 모드에서 결과가 늦게 보임
 

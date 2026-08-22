@@ -11,6 +11,10 @@ spec:
     state.backend.type: hashmap
     execution.checkpointing.interval: "10000"
     execution.checkpointing.mode: AT_LEAST_ONCE
+    execution.checkpointing.timeout: 2 min
+    execution.checkpointing.min-pause: 5 s
+    execution.checkpointing.max-concurrent-checkpoints: "1"
+    execution.checkpointing.tolerable-failed-checkpoints: "3"
     execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
     restart-strategy.type: fixed-delay
     restart-strategy.fixed-delay.attempts: "3"
