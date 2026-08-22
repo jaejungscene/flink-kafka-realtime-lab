@@ -48,6 +48,8 @@ Flink metric은 job, task, operator scope가 이름 앞에 붙습니다. Prometh
 | `numberOfCompletedCheckpoints`, `numberOfFailedCheckpoints` | checkpoint 성공/실패 |
 | `lastCheckpointDuration` | 최근 checkpoint 소요 시간 |
 | `duplicate_events_total` | TTL state가 제거한 중복 event 수 |
+| `merchant_profile_hits_total`, `merchant_profile_misses_total` | CDC profile enrichment 적용/미적용 수 |
+| `merchant_profile_upserts_total`, `merchant_profile_deletes_total` | Broadcast State 변경 수 |
 
 `retained_records`는 정확한 메시지 개수가 아닙니다. 삭제·압축으로 offset 사이에 빈
 구간이 생길 수 있으므로 추세와 대략적인 backlog 크기를 보는 용도로만 사용합니다.
@@ -59,6 +61,7 @@ Flink metric은 job, task, operator scope가 이름 앞에 붙습니다. Prometh
 - `realtime_lab_kafka_consumer_lag`가 계속 증가하나?
 - generator 부하를 올렸을 때 lag가 회복되는가?
 - Flink UI에서 checkpoint 실패나 backpressure가 같이 보이는가?
+- 배포 직후 merchant profile miss 비율이 정상 범위로 내려오는가?
 
 부하 실험을 함께 보려면:
 

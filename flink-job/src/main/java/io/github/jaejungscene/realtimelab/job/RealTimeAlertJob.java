@@ -16,6 +16,7 @@ import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.AggregateFunction;
 import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.api.common.functions.MapFunction;
+import org.apache.flink.api.common.functions.OpenContext;
 import org.apache.flink.api.common.state.BroadcastState;
 import org.apache.flink.api.common.state.MapStateDescriptor;
 import org.apache.flink.api.common.state.ReadOnlyBroadcastState;
@@ -24,6 +25,7 @@ import org.apache.flink.connector.kafka.sink.KafkaSink;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
 import org.apache.flink.core.execution.CheckpointingMode;
+import org.apache.flink.metrics.Counter;
 import org.apache.flink.streaming.api.datastream.BroadcastStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
@@ -515,9 +517,22 @@ public class RealTimeAlertJob {
     static class MerchantRiskProfileEnrichmentFunction
             extends BroadcastProcessFunction<TransactionEvent, MerchantRiskProfile, TransactionEvent> {
         private final MapStateDescriptor<String, MerchantRiskProfile> stateDescriptor;
+        private transient Counter profileHits;
+        private transient Counter profileMisses;
+        private transient Counter profileUpserts;
+        private transient Counter profileDeletes;
 
         MerchantRiskProfileEnrichmentFunction(MapStateDescriptor<String, MerchantRiskProfile> stateDescriptor) {
             this.stateDescriptor = stateDescriptor;
+        }
+
+        @Override
+        public void open(OpenContext openContext) {
+            var metrics = getRuntimeContext().getMetricGroup();
+            profileHits = metrics.counter("merchant_profile_hits_total");
+            profileMisses = metrics.counter("merchant_profile_misses_total");
+            profileUpserts = metrics.counter("merchant_profile_upserts_total");
+            profileDeletes = metrics.counter("merchant_profile_deletes_total");
         }
 
         @Override
@@ -529,9 +544,12 @@ public class RealTimeAlertJob {
                     context.getBroadcastState(stateDescriptor);
             MerchantRiskProfile profile = state.get(normalize(event.getMerchantId(), ""));
             if (profile != null) {
+                profileHits.inc();
                 event.setMerchantRiskTier(profile.getRiskTier());
                 event.setMerchantRiskMultiplier(profile.getRiskMultiplier());
                 event.setMerchantManualReviewRequired(profile.isManualReviewRequired());
+            } else {
+                profileMisses.inc();
             }
             out.collect(event);
         }
@@ -544,8 +562,10 @@ public class RealTimeAlertJob {
             BroadcastState<String, MerchantRiskProfile> state = context.getBroadcastState(stateDescriptor);
             if (profile.isDeleted()) {
                 state.remove(profile.getMerchantId());
+                profileDeletes.inc();
             } else {
                 state.put(profile.getMerchantId(), profile);
+                profileUpserts.inc();
             }
         }
     }

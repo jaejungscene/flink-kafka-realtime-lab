@@ -67,6 +67,8 @@ Flink job은 `merchant_risk_profiles` topic을 earliest부터 읽습니다. 이 
 실무에서는 profile 변경 시점과 이미 처리된 window를 다시 계산할지 여부를 별도 정책으로 정해야 합니다. 이 랩은 “변경 이후 들어오는 이벤트부터 새 profile을 적용”하는 단순하고 흔한 운영 모델을 사용합니다.
 두 입력 스트림의 도착 순서는 보장되지 않으므로 job 시작 직후 profile snapshot이 아직
 도착하지 않은 transaction은 기본 multiplier로 처리될 수 있습니다.
+`merchant_profile_hits_total`과 `merchant_profile_misses_total`을 배포 준비 신호와 데이터
+품질 지표로 함께 보고, miss가 지속되면 connector와 merchant ID 정규화를 확인합니다.
 
 Connector JSON에는 DB 비밀번호를 저장하지 않습니다. Compose가
 `POSTGRES_PASSWORD`를 Kafka Connect 환경변수로 전달하고, connector는
