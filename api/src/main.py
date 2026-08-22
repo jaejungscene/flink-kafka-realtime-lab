@@ -134,6 +134,9 @@ def _collect_kafka_metrics() -> str:
         "# HELP realtime_lab_metrics_partition_errors Partitions whose offsets could not "
         "be collected.",
         "# TYPE realtime_lab_metrics_partition_errors gauge",
+        "# HELP realtime_lab_metrics_group_offset_errors Topics whose consumer group "
+        "offsets could not be collected.",
+        "# TYPE realtime_lab_metrics_group_offset_errors gauge",
     ]
 
     admin = AdminClient({"bootstrap.servers": BOOTSTRAP_SERVERS})
@@ -144,6 +147,7 @@ def _collect_kafka_metrics() -> str:
             [
                 "realtime_lab_kafka_up 0",
                 "realtime_lab_metrics_partition_errors 0",
+                "realtime_lab_metrics_group_offset_errors 0",
             ]
         )
         return "\n".join(lines) + "\n"
@@ -158,6 +162,7 @@ def _collect_kafka_metrics() -> str:
         }
     )
     partition_errors = 0
+    group_offset_errors = 0
 
     try:
         for topic in METRIC_TOPICS:
@@ -178,6 +183,7 @@ def _collect_kafka_metrics() -> str:
                 }
             except KafkaException:
                 committed = {}
+                group_offset_errors += 1
 
             for partition in partitions:
                 try:
@@ -208,6 +214,7 @@ def _collect_kafka_metrics() -> str:
         consumer.close()
 
     lines.append(f"realtime_lab_metrics_partition_errors {partition_errors}")
+    lines.append(f"realtime_lab_metrics_group_offset_errors {group_offset_errors}")
     return "\n".join(lines) + "\n"
 
 

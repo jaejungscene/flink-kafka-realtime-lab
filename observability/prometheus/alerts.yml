@@ -51,3 +51,11 @@ groups:
           severity: warning
         annotations:
           summary: One or more Kafka partition offsets could not be collected
+
+      - alert: RealtimeLabConsumerGroupOffsetCollectionErrors
+        expr: realtime_lab_metrics_group_offset_errors > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Kafka consumer group offsets could not be collected

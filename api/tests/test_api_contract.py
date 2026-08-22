@@ -29,6 +29,18 @@ class ApiContractTest(unittest.TestCase):
     def test_prometheus_label_values_are_escaped(self) -> None:
         self.assertEqual(main._prometheus_label('a\\b"\nc'), 'a\\\\b\\"\\nc')
 
+    def test_metrics_expose_all_collection_statuses_when_kafka_is_down(self) -> None:
+        admin = SimpleNamespace(
+            list_topics=lambda timeout: (_ for _ in ()).throw(main.KafkaException("down"))
+        )
+
+        with patch.object(main, "AdminClient", return_value=admin):
+            payload = main._collect_kafka_metrics()
+
+        self.assertIn("realtime_lab_kafka_up 0", payload)
+        self.assertIn("realtime_lab_metrics_partition_errors 0", payload)
+        self.assertIn("realtime_lab_metrics_group_offset_errors 0", payload)
+
     def test_execution_requires_explicit_confirmation(self) -> None:
         request = main.DlqReplayRequest(dry_run=False, replay_run_id="run-123")
 

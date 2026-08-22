@@ -36,6 +36,7 @@ Prometheus reporter plugin이 포함되어 JobManager와 TaskManager의 `9249` p
 | `realtime_lab_kafka_topic_log_end_offset` | partition log end offset |
 | `realtime_lab_kafka_consumer_lag` | `flink-realtime-lab` group의 partition별 lag |
 | `realtime_lab_metrics_partition_errors` | offset 조회에 실패한 partition 수 |
+| `realtime_lab_metrics_group_offset_errors` | committed offset 조회에 실패한 topic 수 |
 
 Flink metric은 job, task, operator scope가 이름 앞에 붙습니다. Prometheus에서 다음 suffix로
 검색하면 checkpoint, 처리량, 중복 제거 상태를 빠르게 찾을 수 있습니다.
