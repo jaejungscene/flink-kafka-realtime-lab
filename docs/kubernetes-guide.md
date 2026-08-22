@@ -81,6 +81,6 @@ kubectl -n realtime-lab create secret generic realtime-lab-api-secrets \
 placeholder image와 `s3://replace-me-realtime-lab/...` 경로를 바꾸는 것만으로는 충분하지
 않습니다. Flink image에는 S3 filesystem plugin이 포함되어 있지만 cluster의 workload identity
 또는 secret 기반 인증을 연결해야 합니다. 또한 Kafka TLS/auth,
-NetworkPolicy, secret manager, metric reporter와 alert routing을 환경에 맞게 설계해야
+NetworkPolicy, secret manager, Prometheus discovery와 alert routing을 환경에 맞게 설계해야
 합니다. 준비 전에는 `kubectl apply`하지 말고
 `k8s/overlays/prod-like/README.md`의 점검 목록을 따르십시오.

@@ -333,6 +333,48 @@ plugin, 인증, TLS, NetworkPolicy가 없으므로 production manifest로 간주
 - 모든 shell script를 자동 탐색해 구문 검사하고 README/docs의 깨진 상대 링크를 검출합니다.
 - S3 plugin과 관측성 설명을 현재 image 및 manifest와 다시 맞췄습니다.
 
+## 5차 세부 검토: 41–50
+
+### 41. API 준비 상태
+
+- broker 연결뿐 아니라 API가 사용하는 모든 topic의 존재와 metadata 오류를 확인합니다.
+
+### 42. Lag metric 실패 구분
+
+- consumer group offset 조회 실패를 lag 0처럼 숨기지 않고 별도 metric과 alert로 노출합니다.
+
+### 43. Generator backpressure
+
+- local producer queue가 일시적으로 차면 제한 시간 동안 poll/retry하고 지속 포화는 실패 처리합니다.
+
+### 44. Replayer 설정 경계
+
+- import 시점 전역 설정을 불변 settings 객체로 분리하고 broker 없이 오류 조합을 테스트합니다.
+
+### 45. CDC enrichment 관측
+
+- Broadcast State의 profile hit/miss와 upsert/delete를 Flink operator counter로 노출합니다.
+
+### 46. Checkpoint 실패 정책
+
+- timeout, minimum pause, 동시 실행 수와 허용 실패 수를 Compose/Kubernetes에 동일하게 둡니다.
+
+### 47. Kubernetes 실행 순서
+
+- generator Job을 core overlay에서 분리해 Flink가 `RUNNING`이 된 후 명시적으로 실행합니다.
+
+### 48. Kubernetes 기본 보안
+
+- API Secret을 필수화하고 Flink pod를 UID/GID 9999, non-root, capability drop으로 실행합니다.
+
+### 49. 재귀 정적 검사
+
+- 새 Markdown과 Kustomize 디렉터리를 하드코딩 없이 자동 발견해 구조와 렌더링을 검사합니다.
+
+### 50. 의존성 유지보수
+
+- Maven, Python, Docker, GitHub Actions 업데이트 후보를 주간 PR로 만들고 수동 검증 기준을 둡니다.
+
 ## 검증 기준
 
 변경 완료 후 다음을 함께 통과해야 합니다.
@@ -342,7 +384,7 @@ plugin, 인증, TLS, NetworkPolicy가 없으므로 production manifest로 간주
 - Python compile, shell syntax, JSON/Avro JSON 구문 검사
 - Docker Compose 전체 profile 렌더링
 - Prometheus config/rule 검사
-- Kubernetes dev, exactly-once, prod-like overlay 렌더링
+- Kubernetes base, dev, exactly-once, prod-like, generator tool kustomization 렌더링
 - Kafka → Flink → alert/aggregate/DLQ → replay Compose E2E를 at-least-once와
   exactly-once에서 각각 실행
 - PostgreSQL → Debezium → Kafka connector/task와 초기 snapshot record smoke test

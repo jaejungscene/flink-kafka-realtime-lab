@@ -76,6 +76,7 @@ flowchart LR
 - [Delivery Guarantee 실습](docs/delivery-guarantee-guide.md): At-least-once와 Exactly-once 실행 차이
 - [DLQ Summary/Replay API 실습](docs/dlq-replay-api-guide.md): DLQ 원인 요약, replay 미리보기, API 기반 재처리
 - [Flink SQL 가이드](docs/flink-sql-guide.md): DataStream API와 SQL 접근 비교
+- [의존성 업데이트 가이드](docs/dependency-management.md): 고정 버전 검토와 merge 기준
 
 ## 빠른 시작: Docker Compose
 
