@@ -10,7 +10,7 @@
 
     <properties>
         <java.version>17</java.version>
-        <flink.version>2.1.2</flink.version>
+        <flink.version>2.3.0</flink.version>
         <flink.kafka.connector.version>4.0.1-2.0</flink.kafka.connector.version>
         <jackson.version>2.18.3</jackson.version>
         <slf4j.version>1.7.36</slf4j.version>
