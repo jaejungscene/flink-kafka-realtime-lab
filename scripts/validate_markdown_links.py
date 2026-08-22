@@ -7,6 +7,7 @@ from urllib.parse import unquote
 ROOT = Path(__file__).resolve().parents[1]
 MARKDOWN_LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 EXTERNAL_PREFIXES = ("http://", "https://", "mailto:", "#")
+EXCLUDED_DIRECTORIES = {".git", ".venv", "node_modules", "target"}
 
 
 def local_link_targets(markdown_path: Path) -> list[tuple[str, Path]]:
@@ -23,10 +24,22 @@ def local_link_targets(markdown_path: Path) -> list[tuple[str, Path]]:
 
 
 def main() -> None:
-    markdown_files = [ROOT / "README.md", *sorted((ROOT / "docs").glob("*.md"))]
+    markdown_files = sorted(
+        path
+        for path in ROOT.rglob("*.md")
+        if not EXCLUDED_DIRECTORIES.intersection(path.relative_to(ROOT).parts)
+    )
     failures: list[str] = []
 
     for markdown_path in markdown_files:
+        fence_count = sum(
+            line.startswith("```")
+            for line in markdown_path.read_text(encoding="utf-8").splitlines()
+        )
+        if fence_count % 2:
+            failures.append(
+                f"{markdown_path.relative_to(ROOT)}: unclosed Markdown fence ({fence_count})"
+            )
         for target, resolved_path in local_link_targets(markdown_path):
             if not resolved_path.is_relative_to(ROOT) or not resolved_path.exists():
                 failures.append(
@@ -35,7 +48,7 @@ def main() -> None:
 
     if failures:
         raise SystemExit("\n".join(failures))
-    print(f"markdown links ok: files={len(markdown_files)}")
+    print(f"markdown structure ok: files={len(markdown_files)}")
 
 
 if __name__ == "__main__":

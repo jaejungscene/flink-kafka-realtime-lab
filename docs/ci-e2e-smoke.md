@@ -53,7 +53,7 @@ CI_GENERATOR_RUN_SECONDS=60 CI_GENERATOR_EVENTS_PER_SECOND=50 make ci-smoke
 ```
 
 E2E 이전 job에서는 Java `mvn verify`, API/Python unit test와 Ruff, Compose 전체 profile
-렌더링, Prometheus rule 검사, JSON/shell 구문 검사, 세 Kustomize overlay 렌더링을 먼저
+렌더링, Prometheus rule 검사, JSON/shell/Markdown 구조 검사, 모든 Kustomize 디렉터리 렌더링을 먼저
 수행합니다. 별도 CDC smoke job은 Debezium connector와 task가 실제로 `RUNNING`이 되는지
 확인한 뒤 PostgreSQL 초기 snapshot 레코드를 `merchant_risk_profiles`에서 직접 소비해
 JSON payload까지 검증합니다. E2E는 정적·단위 검증이 통과한 뒤에만 시작합니다.
