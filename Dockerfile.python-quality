@@ -32,6 +32,7 @@ RUN python -m py_compile \
         common/python/realtime_lab/dlq_tools.py \
         common/python/realtime_lab/kafka_delivery.py \
         generator/src/producer.py \
+        replayer/src/config.py \
         replayer/src/replay_dlq.py \
         scripts/register_schemas.py \
         scripts/replay-dlq-api.py \
@@ -39,4 +40,5 @@ RUN python -m py_compile \
     && PYTHONPATH=common/python python -m unittest discover -s common/python/tests \
     && PYTHONPATH=api:common/python python -m unittest discover -s api/tests \
     && PYTHONPATH=generator python -m unittest discover -s generator/tests \
+    && PYTHONPATH=replayer:common/python python -m unittest discover -s replayer/tests \
     && python -m unittest discover -s cdc/tests

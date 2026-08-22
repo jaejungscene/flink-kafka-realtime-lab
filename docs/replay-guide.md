@@ -28,6 +28,10 @@ make replay-dlq
 make consume-replay
 ```
 
+CLI replayer는 시작할 때 `REPLAY_RUN_ID`, topic 충돌, isolation level, 처리 건수와 미래
+시각 허용 범위를 한 번에 검증합니다. `REPLAY_RUN_ID`는 재실행해도 동일하게 유지해야 같은
+DLQ offset에서 안정적인 `replayId`가 생성됩니다.
+
 Flink job은 `transactions.raw`와 `transactions.replay`를 모두 소비합니다.
 
 API endpoint 상세는 [DLQ Summary/Replay API 실습](dlq-replay-api-guide.md)을 참고합니다.
