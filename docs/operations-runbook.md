@@ -25,6 +25,7 @@ curl http://localhost:8000/metrics
 기대 상태:
 
 - Kafka가 healthy 상태입니다.
+- API `/ready`가 Kafka 연결과 모든 `READABLE_TOPICS`의 metadata 상태를 확인합니다.
 - Flink에 `flink-kraft-realtime-lab` job이 `RUNNING` 상태로 존재합니다.
 - Generator 실행 후 `alerts.fraud`, `transactions.aggregates`, `transactions.dlq`에 메시지가 들어옵니다.
 

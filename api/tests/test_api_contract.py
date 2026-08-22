@@ -1,4 +1,5 @@
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import HTTPException
@@ -49,6 +50,30 @@ class ApiContractTest(unittest.TestCase):
         response = client.get("/topics/transactions.raw/messages?limit=0")
 
         self.assertEqual(response.status_code, 422)
+
+    def test_readiness_rejects_missing_or_failed_required_topics(self) -> None:
+        metadata = SimpleNamespace(
+            topics={
+                "transactions.raw": SimpleNamespace(error=None),
+                "transactions.dlq": SimpleNamespace(error="leader unavailable"),
+            }
+        )
+
+        unavailable = main._unavailable_topics(
+            metadata,
+            frozenset({"transactions.raw", "transactions.dlq", "transactions.replay"}),
+        )
+
+        self.assertEqual(unavailable, ["transactions.dlq", "transactions.replay"])
+
+    def test_readiness_requires_all_exposed_topics(self) -> None:
+        metadata = SimpleNamespace(
+            topics={topic: SimpleNamespace(error=None) for topic in main.READABLE_TOPICS}
+        )
+        admin = SimpleNamespace(list_topics=lambda timeout: metadata)
+
+        with patch.object(main, "AdminClient", return_value=admin):
+            self.assertEqual(main.ready(), {"status": "ready"})
 
     def test_api_token_is_optional_locally_and_enforced_when_configured(self) -> None:
         main._require_api_token(None)

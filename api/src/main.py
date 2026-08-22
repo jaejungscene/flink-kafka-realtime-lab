@@ -67,10 +67,22 @@ def health() -> dict[str, str]:
 @app.get("/ready")
 def ready() -> dict[str, str]:
     try:
-        AdminClient({"bootstrap.servers": BOOTSTRAP_SERVERS}).list_topics(timeout=3)
+        metadata = AdminClient({"bootstrap.servers": BOOTSTRAP_SERVERS}).list_topics(timeout=3)
     except KafkaException as exc:
         raise HTTPException(status_code=503, detail="Kafka is not reachable") from exc
+    unavailable = _unavailable_topics(metadata, READABLE_TOPICS)
+    if unavailable:
+        logger.warning("Required Kafka topics are unavailable: %s", unavailable)
+        raise HTTPException(status_code=503, detail="Required Kafka topics are unavailable")
     return {"status": "ready"}
+
+
+def _unavailable_topics(metadata: Any, required_topics: set[str] | frozenset[str]) -> list[str]:
+    return sorted(
+        topic
+        for topic in required_topics
+        if topic not in metadata.topics or metadata.topics[topic].error is not None
+    )
 
 
 @app.get("/topics", dependencies=[Depends(_require_api_token)])
