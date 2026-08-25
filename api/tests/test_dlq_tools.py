@@ -93,6 +93,37 @@ class DlqToolsTest(unittest.TestCase):
         )
         self.assertIsNone(negative_amount)
 
+    def test_normalize_for_replay_applies_the_risk_currency_contract(self) -> None:
+        base = {
+            "errorType": "PARSE_OR_VALIDATION_ERROR",
+            "rawValue": (
+                '{"eventId":"event-1","userId":"user-1","eventTime":1000,'
+                '"amount":10,"mlFraudScore":0.5,"ipRisk":10}'
+            ),
+        }
+        normalized = normalize_for_replay(
+            base,
+            "transactions.dlq",
+            0,
+            1,
+            "run-1",
+            current_time_millis=1_000,
+        )
+        eur = dict(base)
+        eur["rawValue"] = base["rawValue"][:-1] + ',"currency":"EUR"}'
+
+        self.assertEqual(normalized["currency"], "USD")
+        self.assertIsNone(
+            normalize_for_replay(
+                eur,
+                "transactions.dlq",
+                0,
+                2,
+                "run-1",
+                current_time_millis=1_000,
+            )
+        )
+
     def test_normalize_for_replay_rejects_future_events_and_unsafe_identifiers(self) -> None:
         future_dlq = {
             "errorType": "PARSE_OR_VALIDATION_ERROR",

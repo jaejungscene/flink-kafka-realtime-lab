@@ -10,6 +10,7 @@ from typing import Any
 
 REPLAY_RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{2,79}$")
 DEFAULT_MAX_FUTURE_SKEW_MILLIS = 300_000
+RISK_CURRENCY = "USD"
 
 
 def now_millis() -> int:
@@ -78,6 +79,7 @@ def normalize_for_replay(
     event["schemaVersion"] = _int_or_none(event.get("schemaVersion", 1))
     event["eventTime"] = event_time
     event["amount"] = amount
+    event["currency"] = RISK_CURRENCY
     event["mlFraudScore"] = ml_fraud_score
     event["ipRisk"] = ip_risk
     event["replayId"] = f"{replay_run_id}-{source_partition}-{source_offset}"
@@ -151,6 +153,12 @@ def _replay_candidate(
     amount = _float_or_none(event.get("amount"))
     if amount is None or amount < 0:
         return None, "amount must be a finite non-negative number"
+    currency = event.get("currency")
+    if currency is not None and (
+        not isinstance(currency, str)
+        or (currency.strip() and currency.strip().upper() != RISK_CURRENCY)
+    ):
+        return None, f"currency must be {RISK_CURRENCY} for configured amount thresholds"
     event_time = _int_or_none(event.get("eventTime"))
     if event_time is None or event_time <= 0:
         return None, "eventTime must be preserved as positive epoch millis"
