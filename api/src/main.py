@@ -315,28 +315,47 @@ def read_records_at_offsets(
                         f"({low}..{high - 1})"
                     ),
                 )
+        requested_by_partition: dict[int, set[int]] = {}
+        for partition, offset in requested:
+            requested_by_partition.setdefault(partition, set()).add(offset)
+
+        consumer.assign(
+            [
+                TopicPartition(topic, partition, min(offsets))
+                for partition, offsets in sorted(requested_by_partition.items())
+            ]
+        )
         deadline = time.monotonic() + timeout_seconds
-        found: list[dict[str, Any]] = []
-        for record in records:
-            consumer.assign([TopicPartition(topic, record.partition, record.offset)])
-            while time.monotonic() < deadline:
-                msg = consumer.poll(0.2)
-                if msg is None:
-                    continue
-                if msg.error():
-                    raise KafkaException(msg.error())
-                if msg.partition() == record.partition and msg.offset() == record.offset:
-                    found.append(_message_to_dict(msg))
-                    break
-            else:
-                raise HTTPException(
-                    status_code=404,
-                    detail=(
-                        "selected DLQ record was not readable: "
-                        f"{topic}[{record.partition}]@{record.offset}"
-                    ),
-                )
-        return found
+        found: dict[tuple[int, int], dict[str, Any]] = {}
+        completed_partitions: set[int] = set()
+
+        while len(found) < len(requested) and time.monotonic() < deadline:
+            msg = consumer.poll(min(0.2, max(deadline - time.monotonic(), 0.0)))
+            if msg is None:
+                continue
+            if msg.error():
+                raise KafkaException(msg.error())
+
+            position = (msg.partition(), msg.offset())
+            if position in requested:
+                found[position] = _message_to_dict(msg)
+
+            partition = msg.partition()
+            if (
+                partition not in completed_partitions
+                and msg.offset() >= max(requested_by_partition[partition])
+            ):
+                consumer.pause([TopicPartition(topic, partition)])
+                completed_partitions.add(partition)
+
+        missing = sorted(requested - found.keys())
+        if missing:
+            positions = ", ".join(f"{topic}[{partition}]@{offset}" for partition, offset in missing)
+            raise HTTPException(
+                status_code=404,
+                detail=f"selected DLQ records were not readable: {positions}",
+            )
+        return [found[(record.partition, record.offset)] for record in records]
     finally:
         consumer.close()
 
