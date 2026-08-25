@@ -187,6 +187,7 @@ services:
       RAW_TOPIC: transactions.raw
       EVENTS_PER_SECOND: 25
       RUN_SECONDS: 120
+      RANDOM_SEED: ${GENERATOR_RANDOM_SEED:-}
 
   replayer:
     build:

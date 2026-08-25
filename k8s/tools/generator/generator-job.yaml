@@ -27,6 +27,8 @@ spec:
               value: "15"
             - name: RUN_SECONDS
               value: "60"
+            - name: RANDOM_SEED
+              value: "42"
           resources:
             requests:
               cpu: 50m

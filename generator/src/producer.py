@@ -26,6 +26,16 @@ def positive_int_setting(name: str, fallback: int) -> int:
     return value
 
 
+def optional_int_setting(name: str) -> int | None:
+    raw_value = os.getenv(name)
+    if raw_value is None or not raw_value.strip():
+        return None
+    try:
+        return int(raw_value)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be an integer: {raw_value}") from exc
+
+
 def boolean_setting(name: str, fallback: bool) -> bool:
     raw_value = os.getenv(name)
     if raw_value is None or not raw_value.strip():
@@ -60,11 +70,28 @@ def produce_with_backpressure_retry(
             producer.poll(min(0.1, remaining))
 
 
+def wait_for_slot(
+    started_at: float,
+    index: int,
+    events_per_second: int,
+    *,
+    monotonic=time.monotonic,
+    sleep=time.sleep,
+) -> None:
+    if events_per_second <= 0:
+        raise ValueError("events_per_second must be greater than 0")
+    target_time = started_at + index / events_per_second
+    remaining = target_time - monotonic()
+    if remaining > 0:
+        sleep(remaining)
+
+
 BOOTSTRAP_SERVERS = non_blank_setting("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092")
 RAW_TOPIC = non_blank_setting("RAW_TOPIC", "transactions.raw")
 EVENTS_PER_SECOND = positive_int_setting("EVENTS_PER_SECOND", 20)
 RUN_SECONDS = positive_int_setting("RUN_SECONDS", 60)
 INCLUDE_BAD_EVENTS = boolean_setting("INCLUDE_BAD_EVENTS", True)
+RANDOM_SEED = optional_int_setting("RANDOM_SEED")
 
 CATEGORIES = ("electronics", "grocery", "travel", "gaming", "fashion", "subscription")
 COUNTRIES = ("KR", "US", "JP", "SG", "DE")
@@ -107,7 +134,11 @@ def make_event(index: int) -> dict:
 
     return {
         "schemaVersion": 1,
-        "eventId": str(uuid.uuid4()),
+        "eventId": str(
+            uuid.uuid4()
+            if RANDOM_SEED is None
+            else uuid.uuid5(uuid.NAMESPACE_URL, f"realtime-lab:{RANDOM_SEED}:{index}")
+        ),
         "userId": burst_user or f"user-{random.randint(1, 120):03d}",
         "merchantId": hot_merchant or f"merchant-{random.randint(1, 30):02d}",
         "category": random.choice(CATEGORIES),
@@ -139,11 +170,16 @@ def main() -> None:
         }
     )
 
+    if RANDOM_SEED is not None:
+        random.seed(RANDOM_SEED)
+
     total = EVENTS_PER_SECOND * RUN_SECONDS
-    delay = 1 / max(EVENTS_PER_SECOND, 1)
+    started_at = time.monotonic()
     print(f"producing {total} events to {RAW_TOPIC} through {BOOTSTRAP_SERVERS}", flush=True)
 
     for index in range(total):
+        wait_for_slot(started_at, index, EVENTS_PER_SECOND)
+
         if INCLUDE_BAD_EVENTS and index > 0 and index % 113 == 0:
             event = make_event(index)
             event["eventId"] = ""
@@ -164,8 +200,6 @@ def main() -> None:
             value=payload,
             callback=delivery_report,
         )
-        time.sleep(delay)
-
     undelivered = producer.flush(10)
     if undelivered or delivery_errors:
         raise RuntimeError(
