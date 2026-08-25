@@ -47,6 +47,7 @@
 - `userId`
 - `eventTime`
 - `amount >= 0`
+- `currency`: 생략 시 `USD`, 다른 통화는 별도 환산 없이 DLQ 처리
 - `schemaVersion >= 1`
 
 `replay*` field는 `transactions.replay`에서만 붙을 수 있는 audit metadata입니다.
@@ -78,6 +79,9 @@
 }
 ```
 
+Kafka message key는 `alertId`입니다. 같은 window의 late update는 같은 key를 사용하므로
+downstream은 idempotent upsert로 최신 판단 결과를 반영할 수 있습니다.
+
 ## `transactions.aggregates`
 
 ```json
@@ -93,6 +97,9 @@
   "avgFraudScore": 0.23
 }
 ```
+
+payload의 `key`는 집계 차원이고 Kafka message key는
+`key|windowStart|windowEnd`입니다. 서로 다른 1분 window가 같은 Kafka key를 공유하지 않습니다.
 
 ## `transactions.dlq`
 

@@ -375,6 +375,48 @@ plugin, 인증, TLS, NetworkPolicy가 없으므로 production manifest로 간주
 
 - Maven, Python, Docker, GitHub Actions 업데이트 후보를 주간 PR로 만들고 수동 검증 기준을 둡니다.
 
+## 6차 세부 검토: 51–60
+
+### 51. 선택 offset 조회
+
+- replay 실행 대상 offset을 partition별 한 번의 assignment로 읽고 요청 순서와 누락 진단을 보존했습니다.
+
+### 52. 결과 Kafka key
+
+- 알람은 `alertId`, 집계는 dimension/window 조합을 사용해 downstream upsert 경계를 안정화했습니다.
+
+### 53. 금액 규칙 통화
+
+- 임계값 기준을 USD로 고정하고 parser와 replay가 다른 통화를 동일하게 거부하도록 맞췄습니다.
+
+### 54. 부하 재현성
+
+- Generator를 monotonic pacing으로 바꾸고 선택적 random seed로 event ID와 분포를 재현합니다.
+
+### 55. Replay 시간 경계
+
+- CLI scan timeout을 설정화하고 1~3600초 범위를 시작 시점에 검증합니다.
+
+### 56. Savepoint 대상
+
+- 첫 RUNNING job 대신 정확한 이름 또는 ID로 하나의 job만 선택하도록 변경했습니다.
+
+### 57. Smoke artifact
+
+- 병렬 실행이 고정 `/tmp` 파일을 덮어쓰지 않도록 실행별 임시 디렉터리와 cleanup을 적용했습니다.
+
+### 58. Metric freshness
+
+- 수집 시간, snapshot 시각, 마지막 성공 시각과 slow/stale Prometheus 경보를 추가했습니다.
+
+### 59. Kubernetes 운영 기본값
+
+- prod-like RocksDB incremental checkpoint, 불필요한 token mount 차단, Job 수명 제한을 적용했습니다.
+
+### 60. 문서 정합성
+
+- 스키마, replay, 부하, savepoint, 관측성, Kubernetes 문서를 실제 설정과 다시 대조했습니다.
+
 ## 검증 기준
 
 변경 완료 후 다음을 함께 통과해야 합니다.

@@ -60,6 +60,7 @@ kubectl -n realtime-lab create secret generic realtime-lab-api-secrets \
 - Flink TaskManager 1개
 - stateless Flink upgrade mode
 - opt-in generator Job은 Flink 준비 확인 후 별도 실행
+- Generator는 5분 안에 끝나지 않으면 중단하고 완료 10분 후 자동 정리
 - API 개발용 token은 `dev-only-change-me`
 - Flink JobManager/TaskManager는 UID/GID `9999` non-root로 실행
 
@@ -76,7 +77,11 @@ kubectl -n realtime-lab create secret generic realtime-lab-api-secrets \
 - Kubernetes HA와 standby JobManager 2개
 - savepoint upgrade mode
 - checkpoint/savepoint object storage placeholder
+- RocksDB incremental checkpoint state backend
 - API 2 replicas, topology spread, PodDisruptionBudget
+
+API와 Generator는 Kubernetes API를 호출하지 않으므로 ServiceAccount token을 mount하지
+않습니다. Flink pod는 operator와 HA 동작에 ServiceAccount가 필요하므로 예외입니다.
 
 placeholder image와 `s3://replace-me-realtime-lab/...` 경로를 바꾸는 것만으로는 충분하지
 않습니다. Flink image에는 S3 filesystem plugin이 포함되어 있지만 cluster의 workload identity

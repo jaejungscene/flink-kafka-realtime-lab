@@ -37,6 +37,9 @@ Prometheus reporter plugin이 포함되어 JobManager와 TaskManager의 `9249` p
 | `realtime_lab_kafka_consumer_lag` | `flink-realtime-lab` group의 partition별 lag |
 | `realtime_lab_metrics_partition_errors` | offset 조회에 실패한 partition 수 |
 | `realtime_lab_metrics_group_offset_errors` | committed offset 조회에 실패한 topic 수 |
+| `realtime_lab_metrics_collection_duration_seconds` | 최근 Kafka metric 수집 소요 시간 |
+| `realtime_lab_metrics_collection_timestamp_seconds` | 현재 cache snapshot 생성 시각 |
+| `realtime_lab_metrics_last_success_timestamp_seconds` | 마지막 Kafka metadata 수집 성공 시각 |
 
 Flink metric은 job, task, operator scope가 이름 앞에 붙습니다. Prometheus에서 다음 suffix로
 검색하면 checkpoint, 처리량, 중복 제거 상태를 빠르게 찾을 수 있습니다.
@@ -71,7 +74,7 @@ make load-experiment-small
 
 자세한 해석 기준은 [부하/백프레셔 실험 가이드](load-backpressure-guide.md)를 참고합니다.
 
-Prometheus rule은 API metrics endpoint scrape 실패, Kafka metric 수집 실패, 구성된 topic
+Prometheus rule은 API scrape 실패, Kafka metric 수집 실패·지연·stale, 구성된 topic
 누락, consumer lag, partition offset 수집 오류를 감지합니다. topic별 합계는 별도
 `_total` metric을 만들지 않고 PromQL의 `sum by (topic)`으로 계산합니다. 예제 threshold는
 lab 부하에 맞춘 값이므로 실제 SLO로 그대로 사용하지 않습니다.
