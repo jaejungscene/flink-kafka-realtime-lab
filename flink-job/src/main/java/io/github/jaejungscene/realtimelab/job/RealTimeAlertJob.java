@@ -149,7 +149,7 @@ public class RealTimeAlertJob {
                 .uid(OperatorUids.HIGH_RISK_ALERT_MAPPER);
 
         highRiskAlerts
-                .sinkTo(kafkaSink(config, alertTopic, AlertEvent::getKey, "high-risk-alerts"))
+                .sinkTo(kafkaSink(config, alertTopic, RealTimeAlertJob::alertKafkaKey, "high-risk-alerts"))
                 .name("sink-high-risk-alerts")
                 .uid(OperatorUids.HIGH_RISK_ALERT_SINK);
 
@@ -164,7 +164,7 @@ public class RealTimeAlertJob {
                 .uid(OperatorUids.USER_WINDOW_ALERTS);
 
         userWindowAlerts
-                .sinkTo(kafkaSink(config, alertTopic, AlertEvent::getKey, "user-window-alerts"))
+                .sinkTo(kafkaSink(config, alertTopic, RealTimeAlertJob::alertKafkaKey, "user-window-alerts"))
                 .name("sink-user-window-alerts")
                 .uid(OperatorUids.USER_WINDOW_ALERT_SINK);
 
@@ -177,7 +177,11 @@ public class RealTimeAlertJob {
                 .uid(OperatorUids.TRANSACTION_AGGREGATES);
 
         aggregates
-                .sinkTo(kafkaSink(config, aggregateTopic, AggregateEvent::getKey, "transaction-aggregates"))
+                .sinkTo(kafkaSink(
+                        config,
+                        aggregateTopic,
+                        RealTimeAlertJob::aggregateKafkaKey,
+                        "transaction-aggregates"))
                 .name("sink-transaction-aggregates")
                 .uid(OperatorUids.TRANSACTION_AGGREGATE_SINK);
 
@@ -192,7 +196,11 @@ public class RealTimeAlertJob {
                 .uid(OperatorUids.MERCHANT_ANOMALY_ALERTS);
 
         merchantAnomalyAlerts
-                .sinkTo(kafkaSink(config, alertTopic, AlertEvent::getKey, "merchant-anomaly-alerts"))
+                .sinkTo(kafkaSink(
+                        config,
+                        alertTopic,
+                        RealTimeAlertJob::alertKafkaKey,
+                        "merchant-anomaly-alerts"))
                 .name("sink-merchant-anomaly-alerts")
                 .uid(OperatorUids.MERCHANT_ANOMALY_ALERT_SINK);
 
@@ -210,6 +218,18 @@ public class RealTimeAlertJob {
         String category = normalize(event.getCategory(), "uncategorized");
         String merchant = normalize(event.getMerchantId(), "merchant-unknown");
         return country + "|" + category + "|" + merchant;
+    }
+
+    static String alertKafkaKey(AlertEvent event) {
+        return normalize(event.getAlertId(), normalize(event.getKey(), "alert-unknown"));
+    }
+
+    static String aggregateKafkaKey(AggregateEvent event) {
+        return normalize(event.getKey(), "aggregate-unknown")
+                + "|"
+                + event.getWindowStart()
+                + "|"
+                + event.getWindowEnd();
     }
 
     private static String normalize(String value, String fallback) {
