@@ -40,6 +40,7 @@ flowchart LR
 - `USER_PAYMENT_BURST`: 사용자별 1분 window burst 알람
 - `MERCHANT_ANOMALY`: 가맹점별 1분 거래량/금액/평균 위험도 알람
 - `COUNTRY_CATEGORY_MERCHANT_1M`: 국가/카테고리/가맹점 기준 1분 실시간 집계
+- 금액 규칙 기준 통화: 임계값은 USD 기준이며 다른 통화는 DLQ로 격리
 - `transactions.dlq`: 파싱 실패, 검증 실패, late event 격리
 - `transactions.replay`: 안전성 검사를 통과한 DLQ 이벤트의 재처리 topic
 - Event ID deduplication: replay/원천 중복을 TTL managed state로 제거
@@ -61,6 +62,7 @@ flowchart LR
 | 재처리 대상이 실행 시점에 바뀜 | preview에서 선택한 exact offset, 동일 run ID, 명시적 confirm 요구 |
 | 장애 시 sink 중복 가능성 비교 | at-least-once와 Kafka transactional exactly-once 실행 경로 분리 |
 | replay/원천 topic의 업무 중복 | event ID keyed state와 TTL 기반 중복 제거 |
+| window 결과를 downstream에서 구분하기 어려움 | alert ID와 dimension/window 기반 Kafka key 사용 |
 
 ## 먼저 읽기
 

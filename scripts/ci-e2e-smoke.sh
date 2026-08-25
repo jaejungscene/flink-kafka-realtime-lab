@@ -75,6 +75,7 @@ echo "producing deterministic CI workload"
 compose run --rm \
   -e RUN_SECONDS="${GENERATOR_RUN_SECONDS}" \
   -e EVENTS_PER_SECOND="${GENERATOR_EVENTS_PER_SECOND}" \
+  -e RANDOM_SEED="${CI_GENERATOR_RANDOM_SEED:-42}" \
   -e INCLUDE_BAD_EVENTS=true \
   generator
 

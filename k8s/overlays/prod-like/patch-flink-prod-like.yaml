@@ -5,6 +5,8 @@ metadata:
   namespace: realtime-lab
 spec:
   flinkConfiguration:
+    state.backend.type: rocksdb
+    state.backend.incremental: "true"
     taskmanager.numberOfTaskSlots: "4"
     execution.checkpointing.interval: "10000"
     execution.checkpointing.dir: s3://replace-me-realtime-lab/flink/checkpoints

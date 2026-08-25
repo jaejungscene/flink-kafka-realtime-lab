@@ -98,6 +98,7 @@ class TransactionParserTest {
         assertEquals("user-1", event.getUserId());
         assertNull(event.getMerchantId());
         assertEquals("FAILED", event.getPaymentStatus());
+        assertEquals("USD", event.getCurrency());
 
         KafkaRecord invalidVersion = new KafkaRecord(
                 "transactions.raw",
@@ -121,7 +122,27 @@ class TransactionParserTest {
                         normalized,
                         ObjectMapperFactory.create(),
                         1_000L,
-                        -1L));
+                    -1L));
+    }
+
+    @Test
+    void rejectsCurrenciesThatDoNotMatchAmountThresholds() {
+        KafkaRecord differentCurrency = new KafkaRecord(
+                "transactions.raw",
+                0,
+                1L,
+                1L,
+                "user-1",
+                "{\"eventId\":\"event-1\",\"userId\":\"user-1\",\"eventTime\":1000,"
+                        + "\"amount\":10,\"currency\":\"EUR\"}");
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> TransactionParser.parse(
+                        differentCurrency,
+                        ObjectMapperFactory.create(),
+                        1_000L,
+                        100L));
     }
 
     private static KafkaRecord recordWith(long eventTime, double score, int ipRisk) {

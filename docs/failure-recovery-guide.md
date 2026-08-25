@@ -80,6 +80,15 @@ checkpoint SLO에 맞춰 이 값을 조정합니다.
 make savepoint
 ```
 
+스크립트는 기본 job 이름 `flink-kraft-realtime-lab`을 정확히 하나 찾습니다. 여러 job을
+운영하는 session cluster에서는 다음처럼 대상을 명시합니다.
+
+```bash
+FLINK_JOB_ID=<job-id> make savepoint
+# 또는
+FLINK_JOB_NAME=<exact-job-name> make savepoint
+```
+
 Savepoint는 job upgrade, rule 변경, 버전 배포 전에 상태를 넘기기 위한 운영 절차입니다.
 이 lab의 기본 경로는 Compose named volume 안의
 `file:///opt/flink/state/savepoints`입니다. 컨테이너 재생성에는 남지만 Docker host 장애나

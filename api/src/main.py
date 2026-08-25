@@ -41,6 +41,7 @@ API_TOKEN = SETTINGS.api_token
 
 _metrics_lock = threading.Lock()
 _metrics_cache: tuple[float, str] | None = None
+_metrics_last_success_timestamp_seconds = 0.0
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Flink KRaft Realtime Lab API", version="1.0.0")
@@ -99,12 +100,24 @@ def topics() -> dict[str, list[str]]:
 
 @app.get("/metrics")
 def metrics() -> Response:
-    global _metrics_cache
+    global _metrics_cache, _metrics_last_success_timestamp_seconds
 
     now = time.monotonic()
     with _metrics_lock:
         if _metrics_cache is None or now - _metrics_cache[0] >= METRICS_CACHE_SECONDS:
-            _metrics_cache = (now, _collect_kafka_metrics())
+            collection_started = time.monotonic()
+            payload = _collect_kafka_metrics()
+            collected_at = time.time()
+            if "\nrealtime_lab_kafka_up 1\n" in f"\n{payload}":
+                _metrics_last_success_timestamp_seconds = collected_at
+            duration = time.monotonic() - collection_started
+            payload = _append_collection_metrics(
+                payload,
+                duration_seconds=duration,
+                collected_at_seconds=collected_at,
+                last_success_at_seconds=_metrics_last_success_timestamp_seconds,
+            )
+            _metrics_cache = (time.monotonic(), payload)
 
         payload = _metrics_cache[1]
 
@@ -113,6 +126,31 @@ def metrics() -> Response:
         media_type="text/plain; version=0.0.4",
         headers={"Cache-Control": f"public, max-age={int(METRICS_CACHE_SECONDS)}"},
     )
+
+
+def _append_collection_metrics(
+    payload: str,
+    *,
+    duration_seconds: float,
+    collected_at_seconds: float,
+    last_success_at_seconds: float,
+) -> str:
+    return payload.rstrip("\n") + "\n" + "\n".join(
+        [
+            "# HELP realtime_lab_metrics_collection_duration_seconds "
+            "Duration of the latest Kafka metric collection.",
+            "# TYPE realtime_lab_metrics_collection_duration_seconds gauge",
+            f"realtime_lab_metrics_collection_duration_seconds {duration_seconds:.6f}",
+            "# HELP realtime_lab_metrics_collection_timestamp_seconds "
+            "Unix timestamp of the cached metric snapshot.",
+            "# TYPE realtime_lab_metrics_collection_timestamp_seconds gauge",
+            f"realtime_lab_metrics_collection_timestamp_seconds {collected_at_seconds:.3f}",
+            "# HELP realtime_lab_metrics_last_success_timestamp_seconds "
+            "Unix timestamp of the latest successful Kafka metadata collection.",
+            "# TYPE realtime_lab_metrics_last_success_timestamp_seconds gauge",
+            f"realtime_lab_metrics_last_success_timestamp_seconds {last_success_at_seconds:.3f}",
+        ]
+    ) + "\n"
 
 
 def _collect_kafka_metrics() -> str:
@@ -315,28 +353,47 @@ def read_records_at_offsets(
                         f"({low}..{high - 1})"
                     ),
                 )
+        requested_by_partition: dict[int, set[int]] = {}
+        for partition, offset in requested:
+            requested_by_partition.setdefault(partition, set()).add(offset)
+
+        consumer.assign(
+            [
+                TopicPartition(topic, partition, min(offsets))
+                for partition, offsets in sorted(requested_by_partition.items())
+            ]
+        )
         deadline = time.monotonic() + timeout_seconds
-        found: list[dict[str, Any]] = []
-        for record in records:
-            consumer.assign([TopicPartition(topic, record.partition, record.offset)])
-            while time.monotonic() < deadline:
-                msg = consumer.poll(0.2)
-                if msg is None:
-                    continue
-                if msg.error():
-                    raise KafkaException(msg.error())
-                if msg.partition() == record.partition and msg.offset() == record.offset:
-                    found.append(_message_to_dict(msg))
-                    break
-            else:
-                raise HTTPException(
-                    status_code=404,
-                    detail=(
-                        "selected DLQ record was not readable: "
-                        f"{topic}[{record.partition}]@{record.offset}"
-                    ),
-                )
-        return found
+        found: dict[tuple[int, int], dict[str, Any]] = {}
+        completed_partitions: set[int] = set()
+
+        while len(found) < len(requested) and time.monotonic() < deadline:
+            msg = consumer.poll(min(0.2, max(deadline - time.monotonic(), 0.0)))
+            if msg is None:
+                continue
+            if msg.error():
+                raise KafkaException(msg.error())
+
+            position = (msg.partition(), msg.offset())
+            if position in requested:
+                found[position] = _message_to_dict(msg)
+
+            partition = msg.partition()
+            if (
+                partition not in completed_partitions
+                and msg.offset() >= max(requested_by_partition[partition])
+            ):
+                consumer.pause([TopicPartition(topic, partition)])
+                completed_partitions.add(partition)
+
+        missing = sorted(requested - found.keys())
+        if missing:
+            positions = ", ".join(f"{topic}[{partition}]@{offset}" for partition, offset in missing)
+            raise HTTPException(
+                status_code=404,
+                detail=f"selected DLQ records were not readable: {positions}",
+            )
+        return [found[(record.partition, record.offset)] for record in records]
     finally:
         consumer.close()
 

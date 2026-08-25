@@ -12,6 +12,7 @@ from src import main
 class ApiContractTest(unittest.TestCase):
     def setUp(self) -> None:
         main._metrics_cache = None
+        main._metrics_last_success_timestamp_seconds = 0.0
 
     def test_metrics_are_cached_between_scrapes(self) -> None:
         with patch.object(
@@ -22,9 +23,27 @@ class ApiContractTest(unittest.TestCase):
             first = main.metrics()
             second = main.metrics()
 
-        self.assertEqual(first.body, b"realtime_lab_up 1\n")
+        self.assertTrue(first.body.startswith(b"realtime_lab_up 1\n"))
         self.assertEqual(second.body, first.body)
         collect.assert_called_once_with()
+
+    def test_metrics_include_collection_freshness(self) -> None:
+        with (
+            patch.object(
+                main,
+                "_collect_kafka_metrics",
+                return_value="realtime_lab_kafka_up 1\n",
+            ),
+            patch.object(main.time, "time", return_value=1_800_000_000.0),
+        ):
+            payload = main.metrics().body.decode()
+
+        self.assertIn("realtime_lab_metrics_collection_duration_seconds", payload)
+        self.assertIn("realtime_lab_metrics_collection_timestamp_seconds 1800000000.000", payload)
+        self.assertIn(
+            "realtime_lab_metrics_last_success_timestamp_seconds 1800000000.000",
+            payload,
+        )
 
     def test_prometheus_label_values_are_escaped(self) -> None:
         self.assertEqual(main._prometheus_label('a\\b"\nc'), 'a\\\\b\\"\\nc')
@@ -122,6 +141,75 @@ class ApiContractTest(unittest.TestCase):
                 main.read_records_at_offsets("transactions.dlq", records, 1.0)
 
         self.assertEqual(raised.exception.status_code, 404)
+
+    def test_selected_dlq_records_are_read_in_one_partition_assignment(self) -> None:
+        class FakeMessage:
+            def __init__(self, partition: int, offset: int) -> None:
+                self._partition = partition
+                self._offset = offset
+
+            def error(self):
+                return None
+
+            def topic(self) -> str:
+                return "transactions.dlq"
+
+            def partition(self) -> int:
+                return self._partition
+
+            def offset(self) -> int:
+                return self._offset
+
+            def key(self):
+                return b"PARSE_OR_VALIDATION_ERROR"
+
+            def value(self):
+                return b'{"errorType":"PARSE_OR_VALIDATION_ERROR"}'
+
+        class FakeConsumer:
+            def __init__(self) -> None:
+                self.messages = iter(
+                    [FakeMessage(0, 4), FakeMessage(1, 7), FakeMessage(0, 5)]
+                )
+                self.assignments = []
+                self.paused = []
+
+            def get_watermark_offsets(self, topic_partition, timeout):
+                return (0, 20)
+
+            def assign(self, partitions) -> None:
+                self.assignments.append(partitions)
+
+            def poll(self, timeout):
+                return next(self.messages, None)
+
+            def pause(self, partitions) -> None:
+                self.paused.extend(partitions)
+
+            def close(self) -> None:
+                pass
+
+        consumer = FakeConsumer()
+        records = [
+            main.DlqRecordRef(partition=1, offset=7),
+            main.DlqRecordRef(partition=0, offset=5),
+        ]
+
+        with (
+            patch.object(main, "_topic_partitions", return_value=[0, 1]),
+            patch.object(main, "Consumer", return_value=consumer),
+        ):
+            result = main.read_records_at_offsets("transactions.dlq", records, 1.0)
+
+        self.assertEqual(len(consumer.assignments), 1)
+        self.assertEqual(
+            [(item.partition, item.offset) for item in consumer.assignments[0]],
+            [(0, 5), (1, 7)],
+        )
+        self.assertEqual(
+            [(item["partition"], item["offset"]) for item in result],
+            [(1, 7), (0, 5)],
+        )
 
 
 if __name__ == "__main__":

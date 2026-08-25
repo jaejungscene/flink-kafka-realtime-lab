@@ -59,3 +59,20 @@ groups:
           severity: warning
         annotations:
           summary: Kafka consumer group offsets could not be collected
+
+      - alert: RealtimeLabKafkaMetricsStale
+        expr: time() - realtime_lab_metrics_last_success_timestamp_seconds > 60
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Kafka metric collection has not succeeded recently
+          description: "Last successful collection was {{ $value | humanizeDuration }} ago"
+
+      - alert: RealtimeLabKafkaMetricsCollectionSlow
+        expr: realtime_lab_metrics_collection_duration_seconds > 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Kafka metric collection is slower than the lab threshold

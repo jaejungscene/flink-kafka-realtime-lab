@@ -12,6 +12,7 @@ import org.apache.flink.util.OutputTag;
 import java.time.Duration;
 
 public class TransactionParser extends ProcessFunction<KafkaRecord, TransactionEvent> {
+    static final String RISK_CURRENCY = "USD";
     private final OutputTag<DlqEvent> dlqTag;
     private final String replayTopic;
     private final long maxFutureSkewMillis;
@@ -92,6 +93,15 @@ public class TransactionParser extends ProcessFunction<KafkaRecord, TransactionE
         }
         if (!Double.isFinite(event.getAmount()) || event.getAmount() < 0) {
             throw new IllegalArgumentException("amount must be a finite non-negative number");
+        }
+        String currency = event.getCurrency();
+        if (currency == null || currency.isBlank()) {
+            event.setCurrency(RISK_CURRENCY);
+        } else if (!RISK_CURRENCY.equalsIgnoreCase(currency.trim())) {
+            throw new IllegalArgumentException(
+                    "currency must be " + RISK_CURRENCY + " for configured amount thresholds");
+        } else {
+            event.setCurrency(RISK_CURRENCY);
         }
         if (!Double.isFinite(event.getMlFraudScore())
                 || event.getMlFraudScore() < 0

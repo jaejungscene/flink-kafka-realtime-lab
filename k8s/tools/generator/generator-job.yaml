@@ -5,11 +5,14 @@ metadata:
   namespace: realtime-lab
 spec:
   backoffLimit: 1
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 600
   template:
     metadata:
       labels:
         app: realtime-lab-generator
     spec:
+      automountServiceAccountToken: false
       restartPolicy: Never
       securityContext:
         runAsNonRoot: true
@@ -27,6 +30,8 @@ spec:
               value: "15"
             - name: RUN_SECONDS
               value: "60"
+            - name: RANDOM_SEED
+              value: "42"
           resources:
             requests:
               cpu: 50m

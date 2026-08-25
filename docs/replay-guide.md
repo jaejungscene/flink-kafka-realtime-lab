@@ -31,6 +31,8 @@ make consume-replay
 CLI replayer는 시작할 때 `REPLAY_RUN_ID`, topic 충돌, isolation level, 처리 건수와 미래
 시각 허용 범위를 한 번에 검증합니다. `REPLAY_RUN_ID`는 재실행해도 동일하게 유지해야 같은
 DLQ offset에서 안정적인 `replayId`가 생성됩니다.
+`REPLAY_SCAN_TIMEOUT_SECONDS`는 1~3600초이며 기본값은 20초입니다. replay 가능한 record가
+드문 DLQ에서는 이 값을 늘리되 `MAX_MESSAGES`를 함께 제한합니다.
 
 Flink job은 `transactions.raw`와 `transactions.replay`를 모두 소비합니다.
 
@@ -40,6 +42,7 @@ API endpoint 상세는 [DLQ Summary/Replay API 실습](dlq-replay-api-guide.md)�
 
 - `rawValue`가 유효한 JSON object입니다.
 - `userId`, 양수 epoch millis `eventTime`, 유한한 음수 아닌 `amount`가 보존되어 있습니다.
+- 통화는 금액 규칙 기준인 `USD`이거나 생략되어 있어야 합니다.
 - `eventTime`은 현재 시각보다 설정된 미래 허용 범위를 넘지 않습니다.
 - `mlFraudScore`와 `ipRisk`가 있으면 각각 `0..1`, `0..100` 범위입니다.
 - 식별자는 문자열이고 `schemaVersion`은 양의 정수입니다.

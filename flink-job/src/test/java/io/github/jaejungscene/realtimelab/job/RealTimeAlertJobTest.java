@@ -1,6 +1,8 @@
 package io.github.jaejungscene.realtimelab.job;
 
 import io.github.jaejungscene.realtimelab.config.RiskRuleConfig;
+import io.github.jaejungscene.realtimelab.model.AggregateEvent;
+import io.github.jaejungscene.realtimelab.model.AlertEvent;
 import io.github.jaejungscene.realtimelab.model.TransactionEvent;
 import io.github.jaejungscene.realtimelab.rule.RiskRules;
 import org.junit.jupiter.api.Test;
@@ -59,6 +61,30 @@ class RealTimeAlertJobTest {
         assertEquals(35.0, stats.totalAmount());
         assertEquals(0.4, stats.averageFraudScore(), 0.0001);
         assertEquals("event-a", stats.sampleEventId());
+    }
+
+    @Test
+    void usesStableResultIdsAsKafkaKeys() {
+        AlertEvent alert = AlertEvent.of(
+                "USER_PAYMENT_BURST",
+                "WARN",
+                "user-1",
+                "reason",
+                60_000L,
+                120_000L,
+                120_000L,
+                "eventCount",
+                5.0,
+                "event-1");
+        AggregateEvent aggregate = new AggregateEvent();
+        aggregate.setKey("KR|travel|merchant-1");
+        aggregate.setWindowStart(60_000L);
+        aggregate.setWindowEnd(120_000L);
+
+        assertEquals(alert.getAlertId(), RealTimeAlertJob.alertKafkaKey(alert));
+        assertEquals(
+                "KR|travel|merchant-1|60000|120000",
+                RealTimeAlertJob.aggregateKafkaKey(aggregate));
     }
 
     private static TransactionEvent transaction(String eventId, double amount, double fraudScore) {

@@ -111,6 +111,10 @@ Flink job의 핵심 파일은
 `JobConfig`는 알 수 없는 인자, 중복 인자, 잘못된 범위와 topic 이름 충돌을 시작 시점에
 거부합니다.
 
+금액 임계값은 USD 기준입니다. `currency` 누락은 USD로 정규화하고 다른 통화는 환율을
+추론하지 않고 DLQ로 보냅니다. 알람 Kafka key는 `alertId`, 집계 Kafka key는
+`dimension|windowStart|windowEnd`이므로 late update도 같은 결과 ID로 upsert할 수 있습니다.
+
 ## Docker Compose 구성
 
 | Service | 역할 | 포트/Profile |
