@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SMOKE_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/realtime-lab-smoke.XXXXXX")"
+DLQ_SUMMARY_FILE="${SMOKE_TMP_DIR}/dlq-summary.json"
+DLQ_REPLAY_PREVIEW_FILE="${SMOKE_TMP_DIR}/dlq-replay-preview.json"
+DLQ_REPLAY_FILE="${SMOKE_TMP_DIR}/dlq-replay.json"
+export DLQ_SUMMARY_FILE DLQ_REPLAY_PREVIEW_FILE DLQ_REPLAY_FILE
+
+cleanup() {
+  rm -rf "${SMOKE_TMP_DIR}"
+}
+
+trap cleanup EXIT
+
 curl_api() {
   if [ -n "${API_TOKEN:-}" ]; then
     curl -fsS -H "X-API-Token: ${API_TOKEN}" "$@"
@@ -58,12 +70,13 @@ wait_for_topic_count "transactions.dlq" 1
 
 echo "checking DLQ summary API"
 curl_api "http://localhost:8000/dlq/summary?limit=100&timeout_seconds=3&from_beginning=true" \
-  | tee /tmp/realtime-lab-dlq-summary.json \
+  | tee "${DLQ_SUMMARY_FILE}" \
   | sed 's/^/dlq-summary: /'
 python3 - <<'PY'
 import json
+import os
 
-with open("/tmp/realtime-lab-dlq-summary.json", encoding="utf-8") as fp:
+with open(os.environ["DLQ_SUMMARY_FILE"], encoding="utf-8") as fp:
     data = json.load(fp)
 
 if data.get("scanned", 0) < 1:
@@ -76,12 +89,13 @@ echo "checking DLQ replay preview API"
 curl_api -X POST "http://localhost:8000/dlq/replay" \
   -H "content-type: application/json" \
   -d '{"max_messages":1,"scan_limit":200,"timeout_seconds":5,"dry_run":true}' \
-  | tee /tmp/realtime-lab-dlq-replay-preview.json \
+  | tee "${DLQ_REPLAY_PREVIEW_FILE}" \
   | sed 's/^/dlq-replay-preview: /'
 python3 - <<'PY'
 import json
+import os
 
-with open("/tmp/realtime-lab-dlq-replay-preview.json", encoding="utf-8") as fp:
+with open(os.environ["DLQ_REPLAY_PREVIEW_FILE"], encoding="utf-8") as fp:
     data = json.load(fp)
 
 if data.get("dryRun") is not True:
@@ -95,12 +109,13 @@ API_REPLAY_MAX_MESSAGES=1 \
 API_REPLAY_SCAN_LIMIT=200 \
 API_REPLAY_TIMEOUT_SECONDS=5 \
 python3 scripts/replay-dlq-api.py \
-  | tee /tmp/realtime-lab-dlq-replay.json \
+  | tee "${DLQ_REPLAY_FILE}" \
   | sed 's/^/dlq-replay: /'
 python3 - <<'PY'
 import json
+import os
 
-with open("/tmp/realtime-lab-dlq-replay.json", encoding="utf-8") as fp:
+with open(os.environ["DLQ_REPLAY_FILE"], encoding="utf-8") as fp:
     data = json.load(fp)
 
 if data.get("dryRun") is not False:
