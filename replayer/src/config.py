@@ -29,6 +29,7 @@ class ReplayerSettings:
     replay_topic: str
     isolation_level: str
     max_messages: int
+    scan_timeout_seconds: int
     consumer_group: str
     replay_run_id: str
     max_future_skew_millis: int
@@ -44,6 +45,7 @@ class ReplayerSettings:
             values, "KAFKA_ISOLATION_LEVEL", "read_committed"
         ).lower()
         max_messages = _integer(values, "MAX_MESSAGES", 50)
+        scan_timeout_seconds = _integer(values, "REPLAY_SCAN_TIMEOUT_SECONDS", 20)
         max_future_skew_seconds = _integer(values, "MAX_FUTURE_SKEW_SECONDS", 300)
         replay_run_id = _non_blank(values, "REPLAY_RUN_ID")
 
@@ -55,6 +57,8 @@ class ReplayerSettings:
             )
         if max_messages < 1:
             raise RuntimeError("MAX_MESSAGES must be greater than 0")
+        if not 1 <= scan_timeout_seconds <= 3600:
+            raise RuntimeError("REPLAY_SCAN_TIMEOUT_SECONDS must be between 1 and 3600")
         if max_future_skew_seconds < 0:
             raise RuntimeError("MAX_FUTURE_SKEW_SECONDS must not be negative")
         try:
@@ -70,6 +74,7 @@ class ReplayerSettings:
             replay_topic=replay_topic,
             isolation_level=isolation_level,
             max_messages=max_messages,
+            scan_timeout_seconds=scan_timeout_seconds,
             consumer_group=_non_blank(
                 values, "REPLAYER_GROUP_ID", "realtime-lab-replayer"
             ),

@@ -36,7 +36,7 @@ def main(settings: ReplayerSettings | None = None) -> None:
     replayed = 0
     consumed = 0
     publish_records: list[KafkaPublishRecord] = []
-    deadline = time.monotonic() + 20
+    deadline = time.monotonic() + settings.scan_timeout_seconds
     completed = False
 
     try:
