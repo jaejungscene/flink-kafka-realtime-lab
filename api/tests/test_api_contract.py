@@ -12,6 +12,7 @@ from src import main
 class ApiContractTest(unittest.TestCase):
     def setUp(self) -> None:
         main._metrics_cache = None
+        main._metrics_last_success_timestamp_seconds = 0.0
 
     def test_metrics_are_cached_between_scrapes(self) -> None:
         with patch.object(
@@ -22,9 +23,27 @@ class ApiContractTest(unittest.TestCase):
             first = main.metrics()
             second = main.metrics()
 
-        self.assertEqual(first.body, b"realtime_lab_up 1\n")
+        self.assertTrue(first.body.startswith(b"realtime_lab_up 1\n"))
         self.assertEqual(second.body, first.body)
         collect.assert_called_once_with()
+
+    def test_metrics_include_collection_freshness(self) -> None:
+        with (
+            patch.object(
+                main,
+                "_collect_kafka_metrics",
+                return_value="realtime_lab_kafka_up 1\n",
+            ),
+            patch.object(main.time, "time", return_value=1_800_000_000.0),
+        ):
+            payload = main.metrics().body.decode()
+
+        self.assertIn("realtime_lab_metrics_collection_duration_seconds", payload)
+        self.assertIn("realtime_lab_metrics_collection_timestamp_seconds 1800000000.000", payload)
+        self.assertIn(
+            "realtime_lab_metrics_last_success_timestamp_seconds 1800000000.000",
+            payload,
+        )
 
     def test_prometheus_label_values_are_escaped(self) -> None:
         self.assertEqual(main._prometheus_label('a\\b"\nc'), 'a\\\\b\\"\\nc')
