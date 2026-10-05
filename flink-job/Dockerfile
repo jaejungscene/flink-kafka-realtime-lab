@@ -1,4 +1,4 @@
-FROM maven:3.9.15-eclipse-temurin-26 AS deps
+FROM maven:3-eclipse-temurin-24 AS deps
 WORKDIR /workspace
 COPY pom.xml .
 RUN mvn -q -DskipTests dependency:go-offline
